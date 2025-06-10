@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Depends
 from pydantic import BaseModel, EmailStr, Field
 
-from async_cassandra import AsyncCluster, AsyncCassandraSession
+from async_cassandra import AsyncCluster, AsyncCassandraSession, StreamConfig
 from async_cassandra.exceptions import QueryError
 
 
@@ -365,6 +365,138 @@ async def sync_performance_test(requests: int = Query(100, ge=1, le=1000)):
         avg_time_per_request=total_time / requests,
         requests_per_second=requests / total_time,
     )
+
+
+# Streaming endpoints
+@app.get("/users/stream")
+async def stream_users(
+    limit: int = Query(1000, ge=1, le=10000),
+    fetch_size: int = Query(100, ge=10, le=1000),
+    session: AsyncCassandraSession = Depends(get_session)
+):
+    """
+    Stream users data for large result sets.
+    
+    This endpoint demonstrates streaming functionality for memory-efficient
+    handling of large datasets. Instead of loading all users into memory,
+    it processes them in chunks.
+    
+    Args:
+        limit: Maximum number of users to return
+        fetch_size: Number of users per page (affects memory usage)
+        session: Database session
+    
+    Returns:
+        Streaming response with user data and metadata
+    """
+    try:
+        progress_info = {"pages": 0, "total_rows": 0}
+        
+        def progress_callback(page_num: int, row_count: int):
+            progress_info["pages"] = page_num
+            progress_info["total_rows"] += row_count
+        
+        stream_config = StreamConfig(
+            fetch_size=fetch_size,
+            page_callback=progress_callback
+        )
+        
+        result = await session.execute_stream(
+            f"SELECT * FROM users LIMIT {limit}",
+            stream_config=stream_config
+        )
+        
+        users = []
+        async for row in result:
+            users.append({
+                "id": str(row.id),
+                "name": row.name,
+                "email": row.email,
+                "age": row.age,
+                "created_at": row.created_at.isoformat(),
+                "updated_at": row.updated_at.isoformat(),
+            })
+        
+        return {
+            "users": users,
+            "metadata": {
+                "total_returned": len(users),
+                "pages_fetched": result.page_number,
+                "fetch_size": fetch_size,
+                "streaming_enabled": True
+            }
+        }
+    
+    except QueryError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stream users: {str(e)}")
+
+
+@app.get("/users/stream/pages")
+async def stream_users_by_pages(
+    limit: int = Query(1000, ge=1, le=10000),
+    fetch_size: int = Query(100, ge=10, le=1000),
+    max_pages: int = Query(10, ge=1, le=100),
+    session: AsyncCassandraSession = Depends(get_session)
+):
+    """
+    Stream users data page by page for even more memory efficiency.
+    
+    This endpoint demonstrates page-based streaming where each page
+    is processed separately, providing maximum memory efficiency for
+    very large datasets.
+    
+    Args:
+        limit: Maximum number of users to return
+        fetch_size: Number of users per page
+        max_pages: Maximum number of pages to fetch
+        session: Database session
+    
+    Returns:
+        Information about pages processed and sample data
+    """
+    try:
+        stream_config = StreamConfig(
+            fetch_size=fetch_size,
+            max_pages=max_pages
+        )
+        
+        result = await session.execute_stream(
+            f"SELECT * FROM users LIMIT {limit}",
+            stream_config=stream_config
+        )
+        
+        pages_info = []
+        total_processed = 0
+        
+        async for page in result.pages():
+            page_size = len(page)
+            total_processed += page_size
+            
+            # Process page (in real scenario, you might save to file, 
+            # send to another service, etc.)
+            pages_info.append({
+                "page_number": len(pages_info) + 1,
+                "rows_in_page": page_size,
+                "sample_user": {
+                    "id": str(page[0].id),
+                    "name": page[0].name,
+                    "email": page[0].email
+                } if page else None
+            })
+        
+        return {
+            "pages_processed": len(pages_info),
+            "total_rows_processed": total_processed,
+            "pages_info": pages_info,
+            "metadata": {
+                "fetch_size": fetch_size,
+                "max_pages_limit": max_pages,
+                "streaming_mode": "page_by_page"
+            }
+        }
+    
+    except QueryError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stream users by pages: {str(e)}")
 
 
 if __name__ == "__main__":

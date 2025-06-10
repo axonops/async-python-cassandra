@@ -4,10 +4,10 @@ Async cluster management for Cassandra connections.
 
 import asyncio
 from ssl import SSLContext
-from typing import Any, List, Optional
+from typing import Dict, List, Optional
 
 from cassandra.auth import AuthProvider, PlainTextAuthProvider
-from cassandra.cluster import Cluster
+from cassandra.cluster import Cluster, Metadata
 from cassandra.policies import (
     DCAwareRoundRobinPolicy,
     ExponentialReconnectionPolicy,
@@ -47,7 +47,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
         schema_event_refresh_window: float = 2.0,
         topology_event_refresh_window: float = 10.0,
         status_event_refresh_window: float = 2.0,
-        **kwargs: Any,
+        **kwargs: Dict[str, object],
     ):
         """
         Initialize async cluster wrapper.
@@ -68,7 +68,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
             schema_event_refresh_window: Window for schema event refresh.
             topology_event_refresh_window: Window for topology event refresh.
             status_event_refresh_window: Window for status event refresh.
-            **kwargs: Additional cluster options.
+            **kwargs: Additional cluster options as key-value pairs.
         """
         # Set defaults
         if contact_points is None:
@@ -115,7 +115,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
 
     @classmethod
     def create_with_auth(
-        cls, contact_points: List[str], username: str, password: str, **kwargs: Any
+        cls, contact_points: List[str], username: str, password: str, **kwargs: Dict[str, object]
     ) -> "AsyncCluster":
         """
         Create cluster with username/password authentication.
@@ -124,7 +124,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
             contact_points: List of contact points to connect to.
             username: Username for authentication.
             password: Password for authentication.
-            **kwargs: Additional cluster options.
+            **kwargs: Additional cluster options as key-value pairs.
 
         Returns:
             New AsyncCluster instance.
@@ -168,7 +168,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
         await self.close()
 
     @property
-    def metadata(self) -> Any:
+    def metadata(self) -> Metadata:
         """Get cluster metadata."""
         return self._cluster.metadata
 

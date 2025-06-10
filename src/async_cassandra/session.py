@@ -3,7 +3,7 @@ Async session management for Cassandra connections.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 
 from cassandra import (
     InvalidRequest,
@@ -12,12 +12,13 @@ from cassandra import (
     Unavailable,
     WriteTimeout,
 )
-from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Session
+from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Session, Cluster, Host, ExecutionProfile
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
 from .base import AsyncCloseable, AsyncContextManageable, check_not_closed, ExceptionHandler
 from .exceptions import ConnectionError, QueryError
 from .result import AsyncResultHandler, AsyncResultSet
+from .streaming import StreamingResultHandler, AsyncStreamingResultSet, StreamConfig
 
 
 class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
@@ -38,7 +39,7 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         self._session = session
 
     @classmethod
-    async def create(cls, cluster: Any, keyspace: Optional[str] = None) -> "AsyncCassandraSession":
+    async def create(cls, cluster: Cluster, keyspace: Optional[str] = None) -> "AsyncCassandraSession":
         """
         Create a new async session.
 
@@ -64,10 +65,10 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         parameters: Optional[Union[List, Dict]] = None,
         trace: bool = False,
         custom_payload: Optional[Dict[str, bytes]] = None,
-        timeout: Any = _NOT_SET,
-        execution_profile: Any = EXEC_PROFILE_DEFAULT,
+        timeout: Union[float, object] = _NOT_SET,
+        execution_profile: Union[str, ExecutionProfile] = EXEC_PROFILE_DEFAULT,
         paging_state: Optional[bytes] = None,
-        host: Optional[Any] = None,
+        host: Optional[Host] = None,
         execute_as: Optional[str] = None,
     ) -> AsyncResultSet:
         """
@@ -78,8 +79,8 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             parameters: Query parameters.
             trace: Whether to enable query tracing.
             custom_payload: Custom payload to send with the request.
-            timeout: Query timeout in seconds.
-            execution_profile: Execution profile to use.
+            timeout: Query timeout in seconds or _NOT_SET.
+            execution_profile: Execution profile name or object to use.
             paging_state: Paging state for resuming paged queries.
             host: Specific host to execute query on.
             execute_as: User to execute the query as.
@@ -110,13 +111,85 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             handler = AsyncResultHandler(response_future)
             return await handler.get_result()
 
+    @check_not_closed
+    async def execute_stream(
+        self,
+        query: Union[str, SimpleStatement, PreparedStatement],
+        parameters: Optional[Union[List, Dict]] = None,
+        stream_config: Optional[StreamConfig] = None,
+        trace: bool = False,
+        custom_payload: Optional[Dict[str, bytes]] = None,
+        timeout: Union[float, object] = _NOT_SET,
+        execution_profile: Union[str, ExecutionProfile] = EXEC_PROFILE_DEFAULT,
+        paging_state: Optional[bytes] = None,
+        host: Optional[Host] = None,
+        execute_as: Optional[str] = None,
+    ) -> AsyncStreamingResultSet:
+        """
+        Execute a CQL query with streaming support for large result sets.
+        
+        This method is memory-efficient for queries that return many rows,
+        as it fetches results page by page instead of loading everything
+        into memory at once.
+        
+        Args:
+            query: The query to execute.
+            parameters: Query parameters.
+            stream_config: Configuration for streaming (fetch size, callbacks, etc.)
+            trace: Whether to enable query tracing.
+            custom_payload: Custom payload to send with the request.
+            timeout: Query timeout in seconds or _NOT_SET.
+            execution_profile: Execution profile name or object to use.
+            paging_state: Paging state for resuming paged queries.
+            host: Specific host to execute query on.
+            execute_as: User to execute the query as.
+            
+        Returns:
+            AsyncStreamingResultSet for memory-efficient iteration.
+            
+        Raises:
+            QueryError: If query execution fails.
+            
+        Example:
+            # Stream through large result set
+            async for row in await session.execute_stream(
+                "SELECT * FROM large_table",
+                stream_config=StreamConfig(fetch_size=5000)
+            ):
+                process_row(row)
+                
+            # Or process by pages
+            result = await session.execute_stream("SELECT * FROM large_table")
+            async for page in result.pages():
+                process_batch(page)
+        """
+        self._check_not_closed()
+
+        cassandra_exceptions = (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut)
+        
+        async with ExceptionHandler("Streaming query execution failed", QueryError, cassandra_exceptions):
+            response_future = self._session.execute_async(
+                query,
+                parameters,
+                trace,
+                custom_payload,
+                timeout,
+                execution_profile,
+                paging_state,
+                host,
+                execute_as,
+            )
+
+            handler = StreamingResultHandler(response_future, stream_config)
+            return await handler.get_streaming_result()
+
     async def execute_batch(
         self,
         batch_statement: BatchStatement,
         trace: bool = False,
         custom_payload: Optional[Dict[str, bytes]] = None,
-        timeout: Any = _NOT_SET,
-        execution_profile: Any = EXEC_PROFILE_DEFAULT,
+        timeout: Union[float, object] = _NOT_SET,
+        execution_profile: Union[str, ExecutionProfile] = EXEC_PROFILE_DEFAULT,
     ) -> AsyncResultSet:
         """
         Execute a batch statement asynchronously.

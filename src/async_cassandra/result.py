@@ -3,7 +3,7 @@ Async result handling for Cassandra queries.
 """
 
 import asyncio
-from typing import Any, AsyncIterator, List, Optional
+from typing import AsyncIterator, List, Optional, Union, Any
 
 from cassandra.cluster import ResponseFuture
 

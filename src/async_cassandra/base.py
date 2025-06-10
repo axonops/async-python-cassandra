@@ -6,7 +6,7 @@ across the library.
 """
 
 import asyncio
-from typing import Any, Optional, TypeVar, Protocol
+from typing import Optional, TypeVar, Protocol, Type, Tuple, Any
 from abc import ABC, abstractmethod
 
 from .exceptions import ConnectionError
@@ -75,7 +75,7 @@ class AsyncContextManageable:
         """Async context manager entry."""
         return self
     
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         """Async context manager exit."""
         if hasattr(self, 'close'):
             await self.close()
@@ -123,8 +123,8 @@ class ExceptionHandler:
             pass
     """
     
-    def __init__(self, error_message: str, wrapper_exception: type, 
-                 reraise_exceptions: Optional[tuple] = None):
+    def __init__(self, error_message: str, wrapper_exception: Type[Exception], 
+                 reraise_exceptions: Optional[Tuple[Type[Exception], ...]] = None):
         """
         Initialize the exception handler.
         
@@ -140,7 +140,7 @@ class ExceptionHandler:
     async def __aenter__(self):
         return self
     
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> Optional[bool]:
         if exc_type is None:
             return False
         

@@ -8,7 +8,7 @@ connection per host, monitoring these connections is crucial.
 
 import asyncio
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Optional, Callable, Union, Any
 import logging
 from dataclasses import dataclass, field
 from enum import Enum

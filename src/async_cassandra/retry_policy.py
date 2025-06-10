@@ -2,10 +2,10 @@
 Async-aware retry policies for Cassandra operations.
 """
 
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple, Union
 
 from cassandra.policies import RetryPolicy
-from cassandra.query import ConsistencyLevel
+from cassandra.query import ConsistencyLevel, SimpleStatement, PreparedStatement, BatchStatement
 
 
 class AsyncRetryPolicy(RetryPolicy):
@@ -28,7 +28,7 @@ class AsyncRetryPolicy(RetryPolicy):
 
     def on_read_timeout(
         self,
-        query: Any,
+        query: Union[SimpleStatement, PreparedStatement, BatchStatement],
         consistency: ConsistencyLevel,
         required_responses: int,
         received_responses: int,
@@ -39,7 +39,7 @@ class AsyncRetryPolicy(RetryPolicy):
         Handle read timeout.
 
         Args:
-            query: The query that timed out.
+            query: The query statement that timed out.
             consistency: The consistency level of the query.
             required_responses: Number of responses required by consistency level.
             received_responses: Number of responses received before timeout.
@@ -65,7 +65,7 @@ class AsyncRetryPolicy(RetryPolicy):
 
     def on_write_timeout(
         self,
-        query: Any,
+        query: Union[SimpleStatement, PreparedStatement, BatchStatement],
         consistency: ConsistencyLevel,
         write_type: str,
         required_responses: int,
@@ -76,7 +76,7 @@ class AsyncRetryPolicy(RetryPolicy):
         Handle write timeout.
 
         Args:
-            query: The query that timed out.
+            query: The query statement that timed out.
             consistency: The consistency level of the query.
             write_type: Type of write operation.
             required_responses: Number of responses required by consistency level.
@@ -97,7 +97,7 @@ class AsyncRetryPolicy(RetryPolicy):
 
     def on_unavailable(
         self,
-        query: Any,
+        query: Union[SimpleStatement, PreparedStatement, BatchStatement],
         consistency: ConsistencyLevel,
         required_replicas: int,
         alive_replicas: int,
@@ -127,7 +127,7 @@ class AsyncRetryPolicy(RetryPolicy):
         return self.RETRY, consistency
 
     def on_request_error(
-        self, query: Any, consistency: ConsistencyLevel, error: Exception, retry_num: int
+        self, query: Union[SimpleStatement, PreparedStatement, BatchStatement], consistency: ConsistencyLevel, error: Exception, retry_num: int
     ) -> Tuple[int, Optional[ConsistencyLevel]]:
         """
         Handle request error.

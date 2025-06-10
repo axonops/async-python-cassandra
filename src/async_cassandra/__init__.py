@@ -23,6 +23,11 @@ from .monitoring import (
     HostMetrics,
     ClusterMetrics,
 )
+from .streaming import (
+    AsyncStreamingResultSet,
+    StreamConfig,
+    create_streaming_statement,
+)
 
 __all__ = [
     "AsyncCassandraSession",
@@ -38,4 +43,7 @@ __all__ = [
     "HostStatus",
     "HostMetrics",
     "ClusterMetrics",
+    "AsyncStreamingResultSet",
+    "StreamConfig",
+    "create_streaming_statement",
 ]
