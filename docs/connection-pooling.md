@@ -16,11 +16,11 @@ The `async-cassandra` wrapper leverages the connection pooling provided by the C
 
 ### Official Documentation References
 
-According to the official Python driver documentation:
+According to the [official Python driver API documentation](https://datastax.github.io/python-driver/api/cassandra/cluster.html#cassandra.cluster.Cluster.set_core_connections_per_host):
 
-> "If protocol_version is set to 3 or higher, there is always one connection per host, unless the host is remote and connect_to_remote_hosts is False"
+> "If protocol_version is set to 3 or higher, this is not supported (there is always one connection per host, unless the host is remote and connect_to_remote_hosts is False)"
 
-Attempting to configure multiple connections per host with protocol v3+ results in an `UnsupportedOperation` exception.
+The [source code](https://github.com/datastax/python-driver/blob/master/cassandra/cluster.py) confirms that attempting to configure multiple connections per host with protocol v3+ results in an `UnsupportedOperation` exception.
 
 ## Connection Behavior by Protocol Version
 
@@ -248,6 +248,10 @@ For extremely high-throughput scenarios (>10,000 requests/second per host), cons
 
 ## References
 
-1. [Python Driver GitHub Repository](https://github.com/datastax/python-driver)
-2. [Cassandra Protocol Specifications](https://cassandra.apache.org/doc/latest/cassandra/cql/protocol.html)
-3. [Python GIL Documentation](https://docs.python.org/3/glossary.html#term-global-interpreter-lock)
+1. [DataStax Python Driver API Documentation - Cluster](https://datastax.github.io/python-driver/api/cassandra/cluster.html)
+2. [DataStax Python Driver Documentation Index](https://datastax.github.io/python-driver/index.html)
+3. [Python Driver Source Code - cluster.py](https://github.com/datastax/python-driver/blob/master/cassandra/cluster.py)
+4. [Python Driver GitHub Repository](https://github.com/datastax/python-driver)
+5. [Performance Tips](https://datastax.github.io/python-driver/performance.html)
+6. [Cassandra Protocol Specifications](https://cassandra.apache.org/doc/latest/cassandra/cql/protocol.html)
+7. [Python GIL Documentation](https://docs.python.org/3/glossary.html#term-global-interpreter-lock)

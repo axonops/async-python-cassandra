@@ -1,106 +1,64 @@
 """
-FastAPI example application using async-cassandra.
+Simple FastAPI example using async-cassandra.
+
+This demonstrates basic CRUD operations with Cassandra using the async wrapper.
+Run with: uvicorn main:app --reload
 """
 
 import os
 import uuid
-import time
-import asyncio
 from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query, Depends
-from pydantic import BaseModel, EmailStr, Field
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel, EmailStr
 
-from async_cassandra import AsyncCluster, AsyncCassandraSession, StreamConfig
-from async_cassandra.exceptions import QueryError
+from async_cassandra import AsyncCluster, StreamConfig
 
 
 # Pydantic models
-class UserBase(BaseModel):
-    """Base user model."""
-
-    name: str = Field(..., min_length=1, max_length=100)
+class UserCreate(BaseModel):
+    name: str
     email: EmailStr
-    age: int = Field(..., ge=0, le=150)
+    age: int
 
 
-class UserCreate(UserBase):
-    """User creation model."""
-
-    pass
-
-
-class UserUpdate(BaseModel):
-    """User update model."""
-
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    email: Optional[EmailStr] = None
-    age: Optional[int] = Field(None, ge=0, le=150)
-
-
-class User(UserBase):
-    """User response model."""
-
+class User(BaseModel):
     id: str
+    name: str
+    email: str
+    age: int
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
 
-
-class HealthCheck(BaseModel):
-    """Health check response."""
-
-    status: str
-    cassandra_connected: bool
-    timestamp: datetime
-
-
-class PerformanceResult(BaseModel):
-    """Performance test result."""
-
-    total_time: float
-    requests: int
-    avg_time_per_request: float
-    requests_per_second: float
-
-
-# Global cluster and session
-cluster: Optional[AsyncCluster] = None
-session: Optional[AsyncCassandraSession] = None
+# Global session
+session = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifecycle."""
-    global cluster, session
-
-    # Startup
+    """Manage database lifecycle."""
+    global session
+    
+    # Startup - connect to Cassandra
     cluster = AsyncCluster(
         contact_points=os.getenv("CASSANDRA_HOSTS", "localhost").split(","),
         port=int(os.getenv("CASSANDRA_PORT", "9042")),
     )
-
     session = await cluster.connect()
-
+    
     # Create keyspace and table
-    await session.execute(
-        """
-        CREATE KEYSPACE IF NOT EXISTS fastapi_example
-        WITH REPLICATION = {
-            'class': 'SimpleStrategy',
-            'replication_factor': 1
-        }
-    """
-    )
-
-    await session.set_keyspace("fastapi_example")
-
-    await session.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
+    await session.execute("""
+        CREATE KEYSPACE IF NOT EXISTS example
+        WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}
+    """)
+    await session.set_keyspace("example")
+    # Drop and recreate table for clean test environment
+    await session.execute("DROP TABLE IF EXISTS users")
+    await session.execute("""
+        CREATE TABLE users (
             id UUID PRIMARY KEY,
             name TEXT,
             email TEXT,
@@ -108,298 +66,142 @@ async def lifespan(app: FastAPI):
             created_at TIMESTAMP,
             updated_at TIMESTAMP
         )
-    """
-    )
-
-    # Prepare statements
-    app.state.insert_stmt = await session.prepare(
-        """
-        INSERT INTO users (id, name, email, age, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """
-    )
-
-    app.state.select_stmt = await session.prepare(
-        """
-        SELECT * FROM users WHERE id = ?
-    """
-    )
-
-    app.state.update_stmt = await session.prepare(
-        """
-        UPDATE users
-        SET name = ?, email = ?, age = ?, updated_at = ?
-        WHERE id = ?
-    """
-    )
-
-    app.state.delete_stmt = await session.prepare(
-        """
-        DELETE FROM users WHERE id = ?
-    """
-    )
-
+    """)
+    
     yield
-
+    
     # Shutdown
-    if session:
-        await session.close()
-    if cluster:
-        await cluster.shutdown()
+    await session.close()
+    await cluster.shutdown()
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="async-cassandra FastAPI Example",
-    description="Example API using async-cassandra with FastAPI",
+    title="FastAPI + async-cassandra Example",
+    description="Simple CRUD API using async-cassandra",
     version="1.0.0",
     lifespan=lifespan,
 )
 
 
-# Dependency to get session
-async def get_session() -> AsyncCassandraSession:
-    """Get Cassandra session dependency."""
-    if not session:
-        raise HTTPException(status_code=503, detail="Database not available")
-    return session
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {"message": "FastAPI + async-cassandra example is running!"}
 
 
-# Health check endpoint
-@app.get("/health", response_model=HealthCheck)
-async def health_check(session: AsyncCassandraSession = Depends(get_session)):
-    """Check application health."""
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
     try:
-        # Test database connection
-        await session.execute("SELECT release_version FROM system.local")
-        cassandra_connected = True
+        # Simple health check - verify session is available
+        if session is None:
+            return {"status": "unhealthy", "cassandra_connected": False, "timestamp": datetime.utcnow().isoformat()}
+        
+        # Test connection with a simple query
+        await session.execute("SELECT now() FROM system.local")
+        return {
+            "status": "healthy",
+            "cassandra_connected": True,
+            "timestamp": datetime.utcnow().isoformat()
+        }
     except Exception:
-        cassandra_connected = False
-
-    return HealthCheck(
-        status="healthy" if cassandra_connected else "unhealthy",
-        cassandra_connected=cassandra_connected,
-        timestamp=datetime.utcnow(),
-    )
+        return {
+            "status": "unhealthy", 
+            "cassandra_connected": False,
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
 
-# Create user
 @app.post("/users", response_model=User, status_code=201)
-async def create_user(user: UserCreate, session: AsyncCassandraSession = Depends(get_session)):
+async def create_user(user: UserCreate):
     """Create a new user."""
     user_id = uuid.uuid4()
     now = datetime.utcnow()
-
-    try:
-        await session.execute(
-            app.state.insert_stmt, (user_id, user.name, user.email, user.age, now, now)
-        )
-
-        return User(
-            id=str(user_id),
-            name=user.name,
-            email=user.email,
-            age=user.age,
-            created_at=now,
-            updated_at=now,
-        )
-
-    except QueryError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+    
+    # Use prepared statement for better performance
+    stmt = await session.prepare(
+        "INSERT INTO users (id, name, email, age, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    await session.execute(stmt, [user_id, user.name, user.email, user.age, now, now])
+    
+    return User(
+        id=str(user_id),
+        name=user.name,
+        email=user.email,
+        age=user.age,
+        created_at=now,
+        updated_at=now,
+    )
 
 
-# Get user by ID
 @app.get("/users/{user_id}", response_model=User)
-async def get_user(user_id: str, session: AsyncCassandraSession = Depends(get_session)):
+async def get_user(user_id: str):
     """Get user by ID."""
     try:
-        # Validate UUID
         user_uuid = uuid.UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    
+    stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    result = await session.execute(stmt, [user_uuid])
+    row = result.one()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return User(
+        id=str(row.id),
+        name=row.name,
+        email=row.email,
+        age=row.age,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
-    try:
-        result = await session.execute(app.state.select_stmt, [user_uuid])
-        row = result.one()
 
-        if not row:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        return User(
+@app.get("/users", response_model=List[User])
+async def list_users(limit: int = 10):
+    """List all users."""
+    result = await session.execute(f"SELECT * FROM users LIMIT {limit}")
+    
+    users = []
+    async for row in result:
+        users.append(User(
             id=str(row.id),
             name=row.name,
             email=row.email,
             age=row.age,
             created_at=row.created_at,
             updated_at=row.updated_at,
-        )
-
-    except QueryError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get user: {str(e)}")
-
-
-# List users
-@app.get("/users", response_model=List[User])
-async def list_users(
-    limit: int = Query(10, ge=1, le=100), session: AsyncCassandraSession = Depends(get_session)
-):
-    """List all users with pagination."""
-    try:
-        result = await session.execute(f"SELECT * FROM users LIMIT {limit}")
-
-        users = []
-        async for row in result:
-            users.append(
-                User(
-                    id=str(row.id),
-                    name=row.name,
-                    email=row.email,
-                    age=row.age,
-                    created_at=row.created_at,
-                    updated_at=row.updated_at,
-                )
-            )
-
-        return users
-
-    except QueryError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list users: {str(e)}")
+        ))
+    
+    return users
 
 
-# Update user
-@app.put("/users/{user_id}", response_model=User)
-async def update_user(
-    user_id: str, user_update: UserUpdate, session: AsyncCassandraSession = Depends(get_session)
-):
-    """Update user by ID."""
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
-
-    # Get existing user
-    result = await session.execute(app.state.select_stmt, [user_uuid])
-    existing = result.one()
-
-    if not existing:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Update fields
-    updated_name = user_update.name if user_update.name is not None else existing.name
-    updated_email = user_update.email if user_update.email is not None else existing.email
-    updated_age = user_update.age if user_update.age is not None else existing.age
-    updated_at = datetime.utcnow()
-
-    try:
-        await session.execute(
-            app.state.update_stmt, (updated_name, updated_email, updated_age, updated_at, user_uuid)
-        )
-
-        return User(
-            id=str(user_uuid),
-            name=updated_name,
-            email=updated_email,
-            age=updated_age,
-            created_at=existing.created_at,
-            updated_at=updated_at,
-        )
-
-    except QueryError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
-
-
-# Delete user
-@app.delete("/users/{user_id}", status_code=204)
-async def delete_user(user_id: str, session: AsyncCassandraSession = Depends(get_session)):
+@app.delete("/users/{user_id}")
+async def delete_user(user_id: str):
     """Delete user by ID."""
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
-
-    try:
-        await session.execute(app.state.delete_stmt, [user_uuid])
-    except QueryError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
-
-
-# Performance test endpoints
-@app.get("/performance/async", response_model=PerformanceResult)
-async def async_performance_test(
-    requests: int = Query(100, ge=1, le=1000), session: AsyncCassandraSession = Depends(get_session)
-):
-    """Test async performance with concurrent queries."""
-    start_time = time.time()
-
-    async def execute_query():
-        result = await session.execute("SELECT * FROM users LIMIT 1")
-        return result.one()
-
-    # Execute queries concurrently
-    await asyncio.gather(*[execute_query() for _ in range(requests)])
-
-    total_time = time.time() - start_time
-
-    return PerformanceResult(
-        total_time=total_time,
-        requests=requests,
-        avg_time_per_request=total_time / requests,
-        requests_per_second=requests / total_time,
-    )
-
-
-@app.get("/performance/sync", response_model=PerformanceResult)
-async def sync_performance_test(requests: int = Query(100, ge=1, le=1000)):
-    """Test sync performance (simulated) for comparison."""
-    start_time = time.time()
-
-    # Simulate sync queries with sleep
-    for _ in range(requests):
-        await asyncio.sleep(0.01)  # Simulate 10ms query time
-
-    total_time = time.time() - start_time
-
-    return PerformanceResult(
-        total_time=total_time,
-        requests=requests,
-        avg_time_per_request=total_time / requests,
-        requests_per_second=requests / total_time,
-    )
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    
+    stmt = await session.prepare("DELETE FROM users WHERE id = ?")
+    await session.execute(stmt, [user_uuid])
+    
+    return {"message": "User deleted"}
 
 
 # Streaming endpoints
 @app.get("/users/stream")
 async def stream_users(
     limit: int = Query(1000, ge=1, le=10000),
-    fetch_size: int = Query(100, ge=10, le=1000),
-    session: AsyncCassandraSession = Depends(get_session)
+    fetch_size: int = Query(100, ge=10, le=1000)
 ):
-    """
-    Stream users data for large result sets.
-    
-    This endpoint demonstrates streaming functionality for memory-efficient
-    handling of large datasets. Instead of loading all users into memory,
-    it processes them in chunks.
-    
-    Args:
-        limit: Maximum number of users to return
-        fetch_size: Number of users per page (affects memory usage)
-        session: Database session
-    
-    Returns:
-        Streaming response with user data and metadata
-    """
+    """Stream users data for large result sets."""
     try:
-        progress_info = {"pages": 0, "total_rows": 0}
-        
-        def progress_callback(page_num: int, row_count: int):
-            progress_info["pages"] = page_num
-            progress_info["total_rows"] += row_count
-        
-        stream_config = StreamConfig(
-            fetch_size=fetch_size,
-            page_callback=progress_callback
-        )
+        stream_config = StreamConfig(fetch_size=fetch_size)
         
         result = await session.execute_stream(
             f"SELECT * FROM users LIMIT {limit}",
@@ -427,7 +229,7 @@ async def stream_users(
             }
         }
     
-    except QueryError as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stream users: {str(e)}")
 
 
@@ -435,25 +237,9 @@ async def stream_users(
 async def stream_users_by_pages(
     limit: int = Query(1000, ge=1, le=10000),
     fetch_size: int = Query(100, ge=10, le=1000),
-    max_pages: int = Query(10, ge=1, le=100),
-    session: AsyncCassandraSession = Depends(get_session)
+    max_pages: int = Query(10, ge=1, le=100)
 ):
-    """
-    Stream users data page by page for even more memory efficiency.
-    
-    This endpoint demonstrates page-based streaming where each page
-    is processed separately, providing maximum memory efficiency for
-    very large datasets.
-    
-    Args:
-        limit: Maximum number of users to return
-        fetch_size: Number of users per page
-        max_pages: Maximum number of pages to fetch
-        session: Database session
-    
-    Returns:
-        Information about pages processed and sample data
-    """
+    """Stream users data page by page for memory efficiency."""
     try:
         stream_config = StreamConfig(
             fetch_size=fetch_size,
@@ -472,8 +258,6 @@ async def stream_users_by_pages(
             page_size = len(page)
             total_processed += page_size
             
-            # Process page (in real scenario, you might save to file, 
-            # send to another service, etc.)
             pages_info.append({
                 "page_number": len(pages_info) + 1,
                 "rows_in_page": page_size,
@@ -485,7 +269,6 @@ async def stream_users_by_pages(
             })
         
         return {
-            "pages_processed": len(pages_info),
             "total_rows_processed": total_processed,
             "pages_info": pages_info,
             "metadata": {
@@ -495,11 +278,10 @@ async def stream_users_by_pages(
             }
         }
     
-    except QueryError as e:
+    except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stream users by pages: {str(e)}")
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
