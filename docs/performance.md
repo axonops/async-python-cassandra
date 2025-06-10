@@ -68,8 +68,11 @@ Performance comparison for different concurrency levels:
 async def benchmark_async(session, queries=1000):
     start = time.time()
     
+    # Prepare statement once before the benchmark
+    select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    
     tasks = [
-        session.execute("SELECT * FROM users WHERE id = ?", [uuid.uuid4()])
+        session.execute(select_stmt, [uuid.uuid4()])
         for _ in range(queries)
     ]
     
@@ -149,23 +152,54 @@ await asyncio.gather(*[insert_user(user) for user in users])
 
 ### 3. Batch Operations
 
-Group related writes for better performance:
+**Important**: Batches in Cassandra are NOT for performance optimization in most cases!
+
+#### When to Use Batches
+
+✅ **Use LOGGED batches for**:
+- Atomic writes across multiple tables
+- Maintaining consistency
+
+✅ **Use UNLOGGED batches ONLY for**:
+- Multiple writes to the **same partition key**
+
+❌ **Do NOT use batches for**:
+- Bulk loading data to different partitions
+- Performance optimization (it usually makes things worse!)
 
 ```python
 from cassandra.query import BatchStatement, BatchType
 
-async def bulk_update_users(updates):
-    # Use UNLOGGED batch for better performance
+# GOOD: Batch writes to same partition
+async def update_user_profile(user_id, updates):
     batch = BatchStatement(batch_type=BatchType.UNLOGGED)
     
+    # All these updates go to the same partition (user_id)
+    batch.add("UPDATE users SET email = ? WHERE id = ?", (updates['email'], user_id))
+    batch.add("UPDATE users SET name = ? WHERE id = ?", (updates['name'], user_id))
+    batch.add("UPDATE users SET updated_at = ? WHERE id = ?", (datetime.now(), user_id))
+    
+    await session.execute(batch)
+
+# BAD: Batch writes to different partitions - DON'T DO THIS!
+# async def bulk_update_users(updates):
+#     batch = BatchStatement(batch_type=BatchType.UNLOGGED)
+#     for user_id, email in updates:  # Different user_ids = different partitions!
+#         batch.add(update_stmt, (email, user_id))
+#     await session.execute(batch)
+
+# GOOD: For different partitions, use concurrent individual writes
+async def bulk_update_users(updates):
     update_stmt = await session.prepare(
         "UPDATE users SET email = ? WHERE id = ?"
     )
     
-    for user_id, email in updates:
-        batch.add(update_stmt, (email, user_id))
-    
-    await session.execute_batch(batch)
+    # Execute concurrently, not in a batch!
+    tasks = [
+        session.execute(update_stmt, (email, user_id))
+        for user_id, email in updates
+    ]
+    await asyncio.gather(*tasks)
 ```
 
 ### 4. Query Optimization
@@ -202,9 +236,12 @@ Leverage asyncio for parallel operations:
 
 ```python
 async def process_users(user_ids):
+    # Prepare statement once
+    select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    
     # Fetch all users concurrently
     tasks = [
-        session.execute("SELECT * FROM users WHERE id = ?", [uid])
+        session.execute(select_stmt, [uid])
         for uid in user_ids
     ]
     
@@ -256,7 +293,9 @@ for user_id in user_ids:
 ❌ **Bad:**
 ```python
 users = []
+# Missing prepared statement - will fail!
 for user_id in user_ids:
+    # This will raise an error - must prepare first!
     result = await session.execute(
         "SELECT * FROM users WHERE id = ?", [user_id]
     )
@@ -265,8 +304,10 @@ for user_id in user_ids:
 
 ✅ **Good:**
 ```python
+# Prepare statement once
+select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
 tasks = [
-    session.execute("SELECT * FROM users WHERE id = ?", [uid])
+    session.execute(select_stmt, [uid])
     for uid in user_ids
 ]
 results = await asyncio.gather(*tasks)

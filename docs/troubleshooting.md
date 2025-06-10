@@ -164,13 +164,15 @@ await session.set_keyspace('my_keyspace')
    ```python
    from cassandra.query import BatchStatement
    
+   # Prepare the statement first
+   insert_stmt = await session.prepare(
+       "INSERT INTO table (id, data) VALUES (?, ?)"
+   )
+   
    batch = BatchStatement()
    for item in items:
-       batch.add(
-           "INSERT INTO table (id, data) VALUES (?, ?)",
-           [item.id, item.data]
-       )
-   await session.execute_batch(batch)
+       batch.add(insert_stmt, [item.id, item.data])
+   await session.execute(batch)  # Note: execute, not execute_batch
    ```
 
 3. **Use connection warmup:**

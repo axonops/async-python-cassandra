@@ -5,6 +5,8 @@
 [![Tests](https://github.com/axonops/async-python-cassandra/actions/workflows/tests.yml/badge.svg)](https://github.com/axonops/async-python-cassandra/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/axonops/async-python-cassandra/branch/main/graph/badge.svg)](https://codecov.io/gh/axonops/async-python-cassandra)
 
+> ⚠️ **DEVELOPMENT WARNING**: This library is currently under active development and is NOT ready for production use. APIs may change without notice. Please use for testing and evaluation only.
+
 ## ✨ Overview
 
 An async Python wrapper for the Cassandra Python driver that provides true asynchronous operations, addressing the performance limitations of the official driver when used with async frameworks like FastAPI.
@@ -114,6 +116,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ### Advanced Topics
 - [Connection Pooling Guide](docs/connection-pooling.md) - Understanding Python driver limitations
 - [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
+- [Streaming Large Result Sets](docs/streaming.md) - Efficiently handle large datasets
 - [Architecture Overview](docs/architecture.md) - Technical deep dive
 
 ### Examples

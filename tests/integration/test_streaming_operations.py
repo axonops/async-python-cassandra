@@ -138,14 +138,21 @@ class TestStreamingIntegration:
         """Test streaming with parameterized queries."""
         # Insert some specific test data
         user_id = uuid.uuid4()
+        # Prepare statement first
+        insert_stmt = await cassandra_session.prepare(
+            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
         await cassandra_session.execute(
-            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)",
+            insert_stmt,
             [user_id, "StreamTest", "streamtest@test.com", 99]
         )
         
-        # Stream with parameters
+        # Stream with parameters - prepare statement first
+        select_stmt = await cassandra_session.prepare(
+            "SELECT * FROM users WHERE age = ?"
+        )
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users WHERE age = ?",
+            select_stmt,
             parameters=[99],
             stream_config=StreamConfig(fetch_size=5)
         )

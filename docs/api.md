@@ -226,10 +226,12 @@ Get the first row or None if empty.
 
 **Example:**
 ```python
-result = await session.execute("SELECT * FROM users WHERE id = ?", [user_id])
+# Must prepare the statement first
+stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+result = await session.execute(stmt, [user_id])
 user = result.one()
 if user:
-    print(f"Found user: {user['name']}")
+    print(f"Found user: {user.name}")  # Access as attribute, not dict
 ```
 
 #### `all`

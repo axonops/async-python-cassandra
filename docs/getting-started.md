@@ -127,42 +127,47 @@ first_row = result.one()
 
 ### Parameterized Queries
 
-Always use parameterized queries to prevent CQL injection:
+**Important**: The Cassandra Python driver requires prepared statements for parameterized queries. Direct parameterized queries with placeholders will fail.
 
 ```python
-# Using positional parameters
-result = await session.execute(
-    "SELECT * FROM users WHERE id = ?",
-    [user_id]
-)
+# WRONG - This will fail!
+# result = await session.execute(
+#     "SELECT * FROM users WHERE id = ?",
+#     [user_id]
+# )
 
-# Using named parameters
-result = await session.execute(
-    "SELECT * FROM users WHERE id = :user_id",
-    {'user_id': user_id}
-)
+# CORRECT - Use prepared statements
+prepared = await session.prepare("SELECT * FROM users WHERE id = ?")
+result = await session.execute(prepared, [user_id])
+
+# For one-time queries, you can prepare and execute in sequence
+prepared = await session.prepare("SELECT * FROM users WHERE email = ?")
+result = await session.execute(prepared, ["user@example.com"])
 ```
 
 ### Insert, Update, Delete
 
 ```python
-# Insert
-await session.execute(
-    "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
-    [user_id, name, email]
+# Insert - must use prepared statement
+insert_stmt = await session.prepare(
+    "INSERT INTO users (id, name, email) VALUES (?, ?, ?)"
 )
+await session.execute(insert_stmt, [user_id, name, email])
 
-# Update
-await session.execute(
-    "UPDATE users SET email = ? WHERE id = ?",
-    [new_email, user_id]
+# Update - must use prepared statement
+update_stmt = await session.prepare(
+    "UPDATE users SET email = ? WHERE id = ?"
 )
+await session.execute(update_stmt, [new_email, user_id])
 
-# Delete
-await session.execute(
-    "DELETE FROM users WHERE id = ?",
-    [user_id]
+# Delete - must use prepared statement
+delete_stmt = await session.prepare(
+    "DELETE FROM users WHERE id = ?"
 )
+await session.execute(delete_stmt, [user_id])
+
+# For non-parameterized queries, you can execute directly
+await session.execute("TRUNCATE users")  # No parameters, works directly
 ```
 
 ## Prepared Statements
@@ -188,18 +193,20 @@ for user_id in user_ids:
 ```python
 from cassandra.query import BatchStatement, BatchType
 
+# Prepare the statement first
+insert_stmt = await session.prepare(
+    "INSERT INTO users (id, name, email) VALUES (?, ?, ?)"
+)
+
 # Create a batch
 batch = BatchStatement(batch_type=BatchType.UNLOGGED)
 
-# Add multiple statements
+# Add multiple prepared statements to the batch
 for user in users_to_insert:
-    batch.add(
-        "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
-        [user['id'], user['name'], user['email']]
-    )
+    batch.add(insert_stmt, [user['id'], user['name'], user['email']])
 
 # Execute the batch
-await session.execute_batch(batch)
+await session.execute(batch)  # Note: execute, not execute_batch
 ```
 
 ## Error Handling

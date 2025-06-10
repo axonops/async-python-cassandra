@@ -137,7 +137,9 @@ async def get_metrics():
 # All database queries automatically tracked!
 @app.get("/users/{user_id}")
 async def get_user(user_id: str):
-    result = await session.execute("SELECT * FROM users WHERE id = ?", [user_id])
+    # Must use prepared statement for parameterized queries
+    stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    result = await session.execute(stmt, [user_id])
     return {"user": result.one()}
 ```
 
