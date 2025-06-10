@@ -4,8 +4,7 @@ Unit tests for monitoring module.
 
 import asyncio
 import time
-from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 import pytest
 
 from async_cassandra.monitoring import (

@@ -2,8 +2,6 @@
 Unit tests for base module decorators and utilities.
 """
 
-import asyncio
-from unittest.mock import Mock, AsyncMock, patch
 import pytest
 
 from async_cassandra.base import check_not_closed, ExceptionHandler
@@ -198,11 +196,8 @@ class TestExceptionHandler:
     @pytest.mark.asyncio
     async def test_exception_handler_preserves_traceback(self):
         """Test handler preserves original exception traceback."""
-        line_number = None
-        
         try:
             async with ExceptionHandler("Operation failed", AsyncCassandraError):
-                line_number = 123  # Mark the line
                 raise ValueError("Original error")
         except AsyncCassandraError as e:
             import traceback

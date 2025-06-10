@@ -10,14 +10,12 @@ import uuid
 import time
 import random
 import statistics
-from typing import List, Dict, Any
 from datetime import datetime
 from collections import defaultdict
 import pytest
 import pytest_asyncio
 
 from async_cassandra import AsyncCluster, AsyncCassandraSession, StreamConfig
-from cassandra import ConsistencyLevel
 from cassandra.query import BatchStatement, BatchType
 
 
@@ -97,8 +95,8 @@ class TestStressScenarios:
                     {f"tag{j}" for j in range(random.randint(1, 10))}
                 ])
                 return time.perf_counter() - start, None
-            except Exception as e:
-                return time.perf_counter() - start, str(e)
+            except Exception as exc:
+                return time.perf_counter() - start, str(exc)
         
         # Launch 10,000 concurrent writes
         print("\nLaunching 10,000 concurrent writes...")
@@ -387,8 +385,8 @@ class TestStressScenarios:
             try:
                 await stress_session.execute(select_stmt)
                 return query_id, time.perf_counter() - start, None
-            except Exception as e:
-                return query_id, time.perf_counter() - start, str(e)
+            except Exception as exc:
+                return query_id, time.perf_counter() - start, str(exc)
         
         # Execute all queries concurrently
         start_time = time.time()

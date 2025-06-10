@@ -2,7 +2,6 @@
 Test retry policy idempotency checks.
 """
 
-import pytest
 from unittest.mock import Mock
 from cassandra.query import SimpleStatement, ConsistencyLevel
 from async_cassandra.retry_policy import AsyncRetryPolicy

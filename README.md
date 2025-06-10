@@ -1,7 +1,7 @@
 # async-python-cassandra
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![Tests](https://github.com/axonops/async-python-cassandra/actions/workflows/tests.yml/badge.svg)](https://github.com/axonops/async-python-cassandra/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/axonops/async-python-cassandra/branch/main/graph/badge.svg)](https://codecov.io/gh/axonops/async-python-cassandra)
 
@@ -28,7 +28,7 @@ The official Cassandra Python driver uses a separate thread pool for I/O operati
 
 ## 📋 Requirements
 
-- Python 3.8 or higher
+- Python 3.12 or higher
 - Apache Cassandra 5.0+ (tested with 5.0, may work with earlier versions)
 - cassandra-driver 3.29.2+
 

@@ -7,13 +7,13 @@ name = "async-cassandra"
 version = "0.1.0"
 description = "Async Python wrapper for the Cassandra Python driver"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [
-    {name = "AxonOps", email = "community@axonops.com"},
+    {name = "AxonOps"},
 ]
 maintainers = [
-    {name = "AxonOps", email = "community@axonops.com"},
+    {name = "AxonOps"},
 ]
 keywords = ["cassandra", "async", "asyncio", "database", "nosql"]
 classifiers = [
@@ -22,11 +22,8 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Database",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Framework :: AsyncIO",
@@ -34,7 +31,6 @@ classifiers = [
 
 dependencies = [
     "cassandra-driver>=3.29.2",
-    "typing-extensions>=4.0.0;python_version<'3.10'",
 ]
 
 [project.optional-dependencies]

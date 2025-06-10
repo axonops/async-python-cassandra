@@ -5,14 +5,12 @@ Comprehensive integration tests for concurrent operations against real Cassandra
 import asyncio
 import uuid
 import time
-from typing import List, Tuple
 from datetime import datetime
 import pytest
 import pytest_asyncio
 
 from async_cassandra import AsyncCluster, AsyncCassandraSession
-from cassandra.cluster import NoHostAvailable
-from cassandra import ConsistencyLevel, WriteTimeout, ReadTimeout
+from cassandra import ConsistencyLevel
 
 
 @pytest_asyncio.fixture
@@ -95,7 +93,7 @@ class TestConcurrentOperations:
             tasks.append(read_record(record_id))
         
         start_time = time.time()
-        results = await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks)
         total_time = time.time() - start_time
         
         # Verify results
@@ -389,7 +387,7 @@ class TestConcurrentOperations:
         
         # Execute all operations concurrently
         start_time = time.time()
-        results = await asyncio.gather(*operations, return_exceptions=True)
+        await asyncio.gather(*operations, return_exceptions=True)
         total_time = time.time() - start_time
         
         # Verify counter values

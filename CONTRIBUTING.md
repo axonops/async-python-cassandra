@@ -118,7 +118,7 @@ Before you submit a pull request, check that it meets these guidelines:
 
 1. The pull request should include tests.
 2. If the pull request adds functionality, the docs should be updated.
-3. The pull request should work for Python 3.8, 3.9, 3.10, 3.11, and 3.12. Check the GitHub Actions results.
+3. The pull request should work for Python 3.12. Check the GitHub Actions results.
 4. Code should follow the project's style guidelines (enforced by black, isort, and ruff).
 5. All tests should pass.
 6. Coverage should not decrease.

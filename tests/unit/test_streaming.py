@@ -2,8 +2,7 @@
 Unit tests for streaming functionality.
 """
 
-import asyncio
-from unittest.mock import AsyncMock, Mock, MagicMock, call
+from unittest.mock import Mock
 import pytest
 
 from async_cassandra.streaming import (

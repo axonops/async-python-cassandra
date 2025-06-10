@@ -7,7 +7,6 @@ import pytest
 from unittest.mock import Mock, patch
 from cassandra.query import SimpleStatement, BatchStatement, BatchType
 from cassandra import WriteTimeout
-from async_cassandra import AsyncCluster
 
 
 class TestRetryIdempotencyIntegration:

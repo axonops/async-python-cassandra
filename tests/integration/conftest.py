@@ -2,7 +2,6 @@
 Pytest configuration for integration tests.
 """
 
-import pytest
 import pytest_asyncio
 from async_cassandra import AsyncCluster
 

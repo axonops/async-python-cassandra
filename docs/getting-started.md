@@ -16,7 +16,7 @@ This guide will help you get up and running with async-cassandra quickly.
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.12 or higher
 - Apache Cassandra 2.1+ (recommended: 5.0+)
 - An async framework (FastAPI, aiohttp, etc.) - optional but recommended
 

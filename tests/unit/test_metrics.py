@@ -2,10 +2,8 @@
 Unit tests for metrics module.
 """
 
-import asyncio
-import time
 from datetime import datetime
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, AsyncMock
 import pytest
 
 from async_cassandra.metrics import (
@@ -307,7 +305,7 @@ class TestMetricsMiddleware:
         middleware = MetricsMiddleware(mock_session, [collector])
         
         # Execute query
-        result = await middleware.execute("SELECT * FROM users")
+        await middleware.execute("SELECT * FROM users")
         
         # Check that metrics were recorded
         assert len(collector.query_metrics) == 1

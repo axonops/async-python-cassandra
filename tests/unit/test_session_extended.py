@@ -3,14 +3,13 @@ Extended unit tests for session module to improve coverage.
 """
 
 import asyncio
-import time
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 import pytest
 
 from async_cassandra.session import AsyncCassandraSession
-from async_cassandra.exceptions import ConnectionError, QueryError
+from async_cassandra.exceptions import ConnectionError
 from async_cassandra.streaming import StreamConfig, AsyncStreamingResultSet
-from cassandra import InvalidRequest, Unavailable, ReadTimeout, WriteTimeout
+from cassandra import InvalidRequest, ReadTimeout
 from cassandra.query import SimpleStatement, PreparedStatement, BatchStatement
 from cassandra.cluster import Session, ResultSet, _NOT_SET, EXEC_PROFILE_DEFAULT
 
@@ -41,7 +40,7 @@ class TestAsyncCassandraSessionExtended:
         async_session._metrics = mock_metrics
         
         # Execute query
-        result = await async_session.execute("SELECT * FROM users", [123])
+        await async_session.execute("SELECT * FROM users", [123])
         
         # Verify metrics were recorded
         mock_metrics.record_query_metrics.assert_called_once()
@@ -100,7 +99,7 @@ class TestAsyncCassandraSessionExtended:
         async_session = AsyncCassandraSession(mock_session)
         
         # Execute prepared statement
-        result = await async_session.execute(mock_prepared, [123, "John"])
+        await async_session.execute(mock_prepared, [123, "John"])
         
         # Verify execution
         mock_session.execute_async.assert_called_once_with(
@@ -163,7 +162,7 @@ class TestAsyncCassandraSessionExtended:
             async_session = AsyncCassandraSession(mock_session)
             
             # Execute with all parameters
-            result = await async_session.execute_stream(
+            await async_session.execute_stream(
                 "SELECT * FROM users WHERE id = ?",
                 parameters=[123],
                 stream_config=StreamConfig(fetch_size=500),
@@ -230,7 +229,7 @@ class TestAsyncCassandraSessionExtended:
         async_session = AsyncCassandraSession(mock_session)
         
         # Execute batch
-        result = await async_session.execute(batch)
+        await async_session.execute(batch)
         
         # Verify batch was executed
         mock_session.execute_async.assert_called_once()
@@ -260,7 +259,7 @@ class TestAsyncCassandraSessionExtended:
         async_session = AsyncCassandraSession(mock_session)
         
         # Execute statement
-        result = await async_session.execute(stmt, [123])
+        await async_session.execute(stmt, [123])
         
         # Verify execution
         mock_session.execute_async.assert_called_once()
@@ -285,7 +284,7 @@ class TestAsyncCassandraSessionExtended:
         async_session = AsyncCassandraSession(mock_session)
         
         # Execute with dict parameters
-        result = await async_session.execute(
+        await async_session.execute(
             "SELECT * FROM users WHERE id = :user_id AND name = :name",
             {'user_id': 123, 'name': 'John'}
         )

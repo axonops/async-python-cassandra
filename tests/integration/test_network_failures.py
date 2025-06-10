@@ -6,19 +6,13 @@ import asyncio
 import uuid
 import time
 import subprocess
-import sys
-import os
-from typing import Optional
 from datetime import datetime
 import pytest
 import pytest_asyncio
 
 from async_cassandra import AsyncCluster, AsyncCassandraSession
 from cassandra.cluster import NoHostAvailable
-from cassandra import (
-    ConsistencyLevel, WriteTimeout, ReadTimeout, 
-    OperationTimedOut, Unavailable, ConnectionException
-)
+from cassandra import OperationTimedOut
 
 
 def is_docker_available():
@@ -210,7 +204,7 @@ class TestNetworkFailures:
                 if duration > 0.5:
                     retry_count += 1
                     
-            except Exception as e:
+            except Exception:
                 failure_count += 1
         
         # With retry policy, most should succeed
@@ -355,6 +349,8 @@ class TestNetworkFailures:
             request_timeout=1.0,
         )
         
+        from async_cassandra import AsyncRetryPolicy
+        
         cluster_with_retry = AsyncCluster(
             contact_points=[cassandra_container.get_contact_point()],
             port=cassandra_container.get_mapped_port(9042),
@@ -444,7 +440,7 @@ class TestNetworkFailures:
                 if rows_received % 100 == 0:
                     await asyncio.sleep(0.1)
                     
-        except Exception as e:
+        except Exception:
             errors_encountered += 1
         
         # Should receive at least some rows even with issues
@@ -478,8 +474,8 @@ class TestNetworkFailures:
                 await session_with_retry.execute(batch, timeout=1.0)
                 duration = time.time() - start
                 results[size] = {"success": True, "duration": duration}
-            except Exception as e:
-                results[size] = {"success": False, "error": str(e)}
+            except Exception as exc:
+                results[size] = {"success": False, "error": str(exc)}
         
         # At least small batches should succeed
         assert results[10]["success"]

@@ -100,7 +100,7 @@ Production-ready monitoring configurations:
 
 All examples require:
 
-1. **Python 3.8 or higher**
+1. **Python 3.12 or higher**
 2. **Apache Cassandra** running locally on port 9042
    - For FastAPI example: Use the included docker-compose.yml
    - For others: Install and run Cassandra locally or use Docker:
@@ -162,7 +162,7 @@ We welcome new examples! When contributing:
 - Include clear documentation in the code
 - Handle errors appropriately
 - Clean up resources (drop keyspaces/tables)
-- Test with Python 3.8+
+- Test with Python 3.12
 - Update this README
 
 ## Support
