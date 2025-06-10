@@ -102,7 +102,8 @@ def check_not_closed(method):
     The decorated class must have a _check_not_closed() method.
     """
     async def wrapper(self, *args, **kwargs):
-        self._check_not_closed()
+        if hasattr(self, '_check_not_closed'):
+            self._check_not_closed()
         return await method(self, *args, **kwargs)
     
     # Preserve function metadata

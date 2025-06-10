@@ -90,6 +90,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "stress: marks tests as stress tests for high load scenarios (deselect with '-m \"not stress\"')",
 ]
 
 [tool.coverage.run]
