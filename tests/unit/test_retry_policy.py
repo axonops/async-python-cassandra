@@ -87,6 +87,9 @@ class TestAsyncRetryPolicy:
 
     def test_on_write_timeout_retry_simple(self, policy, mock_query):
         """Test write timeout retry for simple write."""
+        # Mark query as idempotent for write retry
+        mock_query.is_idempotent = True
+        
         decision, consistency = policy.on_write_timeout(
             query=mock_query,
             consistency=ConsistencyLevel.QUORUM,
@@ -101,6 +104,9 @@ class TestAsyncRetryPolicy:
 
     def test_on_write_timeout_retry_batch(self, policy, mock_query):
         """Test write timeout retry for batch write."""
+        # Mark query as idempotent for write retry
+        mock_query.is_idempotent = True
+        
         decision, consistency = policy.on_write_timeout(
             query=mock_query,
             consistency=ConsistencyLevel.QUORUM,

@@ -33,6 +33,12 @@ class User(BaseModel):
     updated_at: datetime
 
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    age: Optional[int] = None
+
+
 # Global session
 session = None
 
@@ -96,20 +102,20 @@ async def health_check():
     try:
         # Simple health check - verify session is available
         if session is None:
-            return {"status": "unhealthy", "cassandra_connected": False, "timestamp": datetime.utcnow().isoformat()}
+            return {"status": "unhealthy", "cassandra_connected": False, "timestamp": datetime.now().isoformat()}
         
         # Test connection with a simple query
         await session.execute("SELECT now() FROM system.local")
         return {
             "status": "healthy",
             "cassandra_connected": True,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
     except Exception:
         return {
             "status": "unhealthy", 
             "cassandra_connected": False,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now().isoformat()
         }
 
 
@@ -117,7 +123,7 @@ async def health_check():
 async def create_user(user: UserCreate):
     """Create a new user."""
     user_id = uuid.uuid4()
-    now = datetime.utcnow()
+    now = datetime.now()
     
     # Use prepared statement for better performance
     stmt = await session.prepare(
@@ -141,7 +147,7 @@ async def get_user(user_id: str):
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID")
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     
     stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
     result = await session.execute(stmt, [user_uuid])
@@ -179,18 +185,82 @@ async def list_users(limit: int = 10):
     return users
 
 
-@app.delete("/users/{user_id}")
+@app.delete("/users/{user_id}", status_code=204)
 async def delete_user(user_id: str):
     """Delete user by ID."""
     try:
         user_uuid = uuid.UUID(user_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID")
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     
     stmt = await session.prepare("DELETE FROM users WHERE id = ?")
     await session.execute(stmt, [user_uuid])
     
-    return {"message": "User deleted"}
+    return None  # 204 No Content
+
+
+@app.put("/users/{user_id}", response_model=User)
+async def update_user(user_id: str, user_update: UserUpdate):
+    """Update user by ID."""
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+    
+    # First check if user exists
+    check_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    result = await session.execute(check_stmt, [user_uuid])
+    existing_user = result.one()
+    
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Build update query dynamically based on provided fields
+    update_fields = []
+    params = []
+    
+    if user_update.name is not None:
+        update_fields.append("name = ?")
+        params.append(user_update.name)
+    
+    if user_update.email is not None:
+        update_fields.append("email = ?")
+        params.append(user_update.email)
+    
+    if user_update.age is not None:
+        update_fields.append("age = ?")
+        params.append(user_update.age)
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    # Always update the updated_at timestamp
+    update_fields.append("updated_at = ?")
+    params.append(datetime.now())
+    params.append(user_uuid)  # WHERE clause
+    
+    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+    update_stmt = await session.prepare(query)
+    await session.execute(update_stmt, params)
+    
+    # Return updated user
+    result = await session.execute(check_stmt, [user_uuid])
+    updated_user = result.one()
+    
+    return User(
+        id=str(updated_user.id),
+        name=updated_user.name,
+        email=updated_user.email,
+        age=updated_user.age,
+        created_at=updated_user.created_at,
+        updated_at=updated_user.updated_at,
+    )
+
+
+@app.patch("/users/{user_id}", response_model=User)
+async def partial_update_user(user_id: str, user_update: UserUpdate):
+    """Partial update user by ID (same as PUT in this implementation)."""
+    return await update_user(user_id, user_update)
 
 
 # Streaming endpoints
@@ -280,6 +350,67 @@ async def stream_users_by_pages(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stream users by pages: {str(e)}")
+
+
+# Performance testing endpoints
+@app.get("/performance/async")
+async def test_async_performance(requests: int = Query(100, ge=1, le=1000)):
+    """Test async performance with concurrent queries."""
+    import asyncio
+    import time
+    
+    start_time = time.time()
+    
+    # Prepare statement once
+    stmt = await session.prepare("SELECT * FROM users LIMIT 1")
+    
+    # Execute queries concurrently
+    async def execute_query():
+        return await session.execute(stmt)
+    
+    tasks = [execute_query() for _ in range(requests)]
+    results = await asyncio.gather(*tasks)
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    return {
+        "requests": requests,
+        "total_time": duration,
+        "requests_per_second": requests / duration if duration > 0 else 0,
+        "avg_time_per_request": duration / requests if requests > 0 else 0,
+        "successful_requests": len(results),
+        "mode": "async"
+    }
+
+
+@app.get("/performance/sync")
+async def test_sync_performance(requests: int = Query(100, ge=1, le=1000)):
+    """Test sync-style performance (sequential execution)."""
+    import time
+    
+    start_time = time.time()
+    
+    # Prepare statement once
+    stmt = await session.prepare("SELECT * FROM users LIMIT 1")
+    
+    # Execute queries sequentially
+    results = []
+    for _ in range(requests):
+        result = await session.execute(stmt)
+        results.append(result)
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    return {
+        "requests": requests,
+        "total_time": duration,
+        "requests_per_second": requests / duration if duration > 0 else 0,
+        "avg_time_per_request": duration / requests if requests > 0 else 0,
+        "successful_requests": len(results),
+        "mode": "sync"
+    }
 
 
 if __name__ == "__main__":

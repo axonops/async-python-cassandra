@@ -297,17 +297,29 @@ stmt = SimpleStatement(
     is_idempotent=True
 )
 
-# NOT safe to retry - could cause duplicate inserts
+# NOT safe to retry - will not be retried
 stmt = SimpleStatement(
-    "INSERT INTO users (id, name) VALUES (?, ?)",
-    is_idempotent=False  # or omit, defaults to False
+    "INSERT INTO users (id, name) VALUES (?, ?)"
+    # is_idempotent defaults to None - treated as non-idempotent
 )
+
+# Prepared statements also need explicit marking
+prepared = await session.prepare(
+    "DELETE FROM users WHERE id = ?"
+)
+prepared.is_idempotent = True  # Mark as safe to retry
+
+# Batch statements can be marked idempotent if all operations are safe
+batch = BatchStatement()
+batch.is_idempotent = True  # Only if all statements in batch are idempotent
 ```
 
-**Important**: Write operations (INSERT, UPDATE, DELETE) are only retried if the statement is explicitly marked with `is_idempotent=True`. This prevents:
+**Important**: Write operations (INSERT, UPDATE, DELETE) are ONLY retried if the statement is explicitly marked with `is_idempotent=True`. Statements without this attribute or with `is_idempotent=False/None` will NOT be retried. This strict policy prevents:
 - Duplicate data insertions
 - Multiple increments/decrements
 - Unintended side effects from retrying non-idempotent operations
+
+Note: By default, Cassandra driver statements have `is_idempotent=None`, which is treated as non-idempotent for safety.
 
 ## Exceptions
 

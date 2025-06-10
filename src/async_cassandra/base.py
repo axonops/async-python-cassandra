@@ -138,10 +138,10 @@ class ExceptionHandler:
         self.wrapper_exception = wrapper_exception
         self.reraise_exceptions = reraise_exceptions or ()
     
-    async def __aenter__(self):
+    def __enter__(self):
         return self
     
-    async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> Optional[bool]:
+    def __exit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> Optional[bool]:
         if exc_type is None:
             return False
         
@@ -151,9 +151,26 @@ class ExceptionHandler:
         
         # Wrap other exceptions
         if not isinstance(exc_val, self.wrapper_exception):
-            raise self.wrapper_exception(
-                f"{self.error_message}: {str(exc_val)}", 
-                cause=exc_val
-            )
+            # Try to create with cause parameter if supported
+            try:
+                wrapped = self.wrapper_exception(
+                    f"{self.error_message}: {str(exc_val)}", 
+                    cause=exc_val
+                )
+            except TypeError:
+                # Fallback for exceptions that don't accept cause
+                wrapped = self.wrapper_exception(
+                    f"{self.error_message}: {str(exc_val)}"
+                )
+            # Always properly chain the exception
+            wrapped.__cause__ = exc_val
+            raise wrapped
         
         return False
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> Optional[bool]:
+        # Reuse sync implementation
+        return self.__exit__(exc_type, exc_val, exc_tb)

@@ -4,7 +4,7 @@ First off, thank you for considering contributing to async-python-cassandra! It'
 
 ## Code of Conduct
 
-This project and everyone participating in it is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to [community@axonops.com](mailto:community@axonops.com).
+This project and everyone participating in it is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior through [GitHub Issues](https://github.com/axonops/async-python-cassandra/issues).
 
 ## How Can I Contribute?
 

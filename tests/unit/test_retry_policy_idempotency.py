@@ -53,7 +53,7 @@ class TestRetryPolicyIdempotency:
         assert consistency is None
 
     def test_write_timeout_no_idempotent_attribute(self):
-        """Test behavior when query has no is_idempotent attribute."""
+        """Test behavior when query has no is_idempotent attribute - should NOT retry."""
         policy = AsyncRetryPolicy(max_retries=3)
         
         # Create a mock query without is_idempotent attribute
@@ -68,9 +68,9 @@ class TestRetryPolicyIdempotency:
             retry_num=0
         )
         
-        # Should retry if no is_idempotent attribute (backward compatibility)
-        assert decision == policy.RETRY
-        assert consistency == ConsistencyLevel.ONE
+        # Should NOT retry if no is_idempotent attribute (strict safety)
+        assert decision == policy.RETHROW
+        assert consistency is None
 
     def test_write_timeout_batch_idempotent(self):
         """Test that idempotent batch queries are retried."""
@@ -194,3 +194,133 @@ class TestRetryPolicyIdempotency:
         
         assert decision == policy.RETHROW
         assert consistency is None
+
+    def test_prepared_statement_without_idempotent(self):
+        """Test PreparedStatement without is_idempotent should not retry."""
+        from cassandra.query import PreparedStatement
+        policy = AsyncRetryPolicy(max_retries=3)
+        
+        # Mock prepared statement without is_idempotent
+        prepared = Mock(spec=PreparedStatement)
+        # Don't set is_idempotent attribute
+        
+        decision, consistency = policy.on_write_timeout(
+            query=prepared,
+            consistency=ConsistencyLevel.ONE,
+            write_type="SIMPLE",
+            required_responses=1,
+            received_responses=0,
+            retry_num=0
+        )
+        
+        assert decision == policy.RETHROW
+        assert consistency is None
+
+    def test_batch_statement_without_idempotent(self):
+        """Test BatchStatement without is_idempotent should not retry."""
+        from cassandra.query import BatchStatement
+        policy = AsyncRetryPolicy(max_retries=3)
+        
+        # Mock batch statement without is_idempotent
+        batch = Mock(spec=BatchStatement)
+        # Don't set is_idempotent attribute
+        
+        decision, consistency = policy.on_write_timeout(
+            query=batch,
+            consistency=ConsistencyLevel.ONE,
+            write_type="BATCH",
+            required_responses=1,
+            received_responses=0,
+            retry_num=0
+        )
+        
+        assert decision == policy.RETHROW
+        assert consistency is None
+
+    def test_default_simple_statement_not_idempotent(self):
+        """Test that default SimpleStatement is not retried."""
+        # Default SimpleStatement has is_idempotent=False
+        query = SimpleStatement("INSERT INTO users (id, name) VALUES (?, ?)")
+        # Check what the default actually is
+        assert query.is_idempotent is False
+        
+        policy = AsyncRetryPolicy(max_retries=3)
+        
+        decision, consistency = policy.on_write_timeout(
+            query=query,
+            consistency=ConsistencyLevel.ONE,
+            write_type="SIMPLE",
+            required_responses=1,
+            received_responses=0,
+            retry_num=0
+        )
+        
+        # Should NOT retry as is_idempotent is not explicitly True
+        assert decision == policy.RETHROW
+        assert consistency is None
+
+    def test_only_explicit_true_is_retried(self):
+        """Test that only is_idempotent=True is retried, not None or False."""
+        policy = AsyncRetryPolicy(max_retries=3)
+        
+        test_cases = [
+            (None, False),  # is_idempotent=None should not retry
+            (False, False), # is_idempotent=False should not retry
+            (True, True),   # is_idempotent=True should retry
+            (1, False),     # Truthy but not True should not retry
+            ("true", False), # String "true" should not retry
+        ]
+        
+        for idempotent_value, should_retry in test_cases:
+            query = Mock()
+            query.is_idempotent = idempotent_value
+            
+            decision, consistency = policy.on_write_timeout(
+                query=query,
+                consistency=ConsistencyLevel.ONE,
+                write_type="SIMPLE",
+                required_responses=1,
+                received_responses=0,
+                retry_num=0
+            )
+            
+            if should_retry:
+                assert decision == policy.RETRY, f"Expected RETRY for is_idempotent={idempotent_value}"
+                assert consistency == ConsistencyLevel.ONE
+            else:
+                assert decision == policy.RETHROW, f"Expected RETHROW for is_idempotent={idempotent_value}"
+                assert consistency is None
+
+    def test_different_write_types(self):
+        """Test retry behavior for different write types."""
+        policy = AsyncRetryPolicy(max_retries=3)
+        
+        # Even with is_idempotent=True, only SIMPLE and BATCH should retry
+        write_types_should_retry = {
+            "SIMPLE": True,
+            "BATCH": True,
+            "COUNTER": False,  # Counter updates should never retry
+            "UNLOGGED_BATCH": False,  # Not in the allowed list
+            "CAS": False,  # Compare-and-swap should not retry
+            "UNKNOWN": False,  # Unknown types should not retry
+        }
+        
+        for write_type, should_retry in write_types_should_retry.items():
+            query = Mock()
+            query.is_idempotent = True  # Mark as idempotent
+            
+            decision, consistency = policy.on_write_timeout(
+                query=query,
+                consistency=ConsistencyLevel.ONE,
+                write_type=write_type,
+                required_responses=1,
+                received_responses=0,
+                retry_num=0
+            )
+            
+            if should_retry:
+                assert decision == policy.RETRY, f"Expected RETRY for write_type={write_type}"
+                assert consistency == ConsistencyLevel.ONE
+            else:
+                assert decision == policy.RETHROW, f"Expected RETHROW for write_type={write_type}"
+                assert consistency is None

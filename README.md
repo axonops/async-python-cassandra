@@ -103,7 +103,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## 📞 Support
 
 - **Issues**: Please report bugs and feature requests on our [GitHub Issues](https://github.com/axonops/async-python-cassandra/issues) page
-- **Community**: For questions and discussions, contact us at community@axonops.com
+- **Community**: For questions and discussions, visit our [GitHub Discussions](https://github.com/axonops/async-python-cassandra/discussions)
 - **Company**: Learn more about AxonOps at [https://axonops.com](https://axonops.com)
 
 ## 📖 Documentation
@@ -117,6 +117,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [Connection Pooling Guide](docs/connection-pooling.md) - Understanding Python driver limitations
 - [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
 - [Streaming Large Result Sets](docs/streaming.md) - Efficiently handle large datasets
+- [Metrics and Monitoring](docs/metrics-monitoring.md) - Track performance and health
 - [Architecture Overview](docs/architecture.md) - Technical deep dive
 
 ### Examples
@@ -125,12 +126,9 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## ⚡ Performance
 
-Benchmarks show significant performance improvements over synchronous operations in high-concurrency scenarios:
+async-cassandra is designed to handle high-concurrency scenarios efficiently by leveraging Python's async/await capabilities and eliminating thread pool bottlenecks. The actual performance improvements will depend on your specific use case, query patterns, and Cassandra cluster configuration.
 
-| Scenario | Sync Driver | Async Wrapper | Improvement |
-|----------|-------------|---------------|--------------|
-| 1000 concurrent queries | 2.3s | 0.8s | 2.9x |
-| 10000 concurrent queries | 23.5s | 7.2s | 3.3x |
+For performance optimization tips, see our [Performance Guide](docs/performance.md).
 
 ## 📝 License
 

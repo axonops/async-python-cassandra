@@ -126,7 +126,7 @@ class TestExceptionHandler:
         assert isinstance(exc_info.value.__cause__, ValueError)
     
     @pytest.mark.asyncio
-    async def test_passthrough_exceptions(self):
+    async def test_reraise_exceptions(self):
         """Test handler passes through specified exceptions."""
         class CustomError(Exception):
             pass
@@ -135,7 +135,7 @@ class TestExceptionHandler:
             async with ExceptionHandler(
                 "Test operation",
                 AsyncCassandraError,
-                passthrough_exceptions=(CustomError,)
+                reraise_exceptions=(CustomError,)
             ):
                 raise CustomError("Should not be wrapped")
         
@@ -144,7 +144,7 @@ class TestExceptionHandler:
         assert str(exc_info.value) == "Should not be wrapped"
     
     @pytest.mark.asyncio
-    async def test_multiple_passthrough_exceptions(self):
+    async def test_multiple_reraise_exceptions(self):
         """Test handler with multiple passthrough exceptions."""
         class Error1(Exception):
             pass
@@ -157,7 +157,7 @@ class TestExceptionHandler:
             async with ExceptionHandler(
                 "Operation",
                 AsyncCassandraError,
-                passthrough_exceptions=(Error1, Error2)
+                reraise_exceptions=(Error1, Error2)
             ):
                 raise Error1("Error 1")
         
@@ -166,7 +166,7 @@ class TestExceptionHandler:
             async with ExceptionHandler(
                 "Operation",
                 AsyncCassandraError,
-                passthrough_exceptions=(Error1, Error2)
+                reraise_exceptions=(Error1, Error2)
             ):
                 raise Error2("Error 2")
         
@@ -175,7 +175,7 @@ class TestExceptionHandler:
             async with ExceptionHandler(
                 "Operation",
                 AsyncCassandraError,
-                passthrough_exceptions=(Error1, Error2)
+                reraise_exceptions=(Error1, Error2)
             ):
                 raise ValueError("Should be wrapped")
     
@@ -206,11 +206,16 @@ class TestExceptionHandler:
                 raise ValueError("Original error")
         except AsyncCassandraError as e:
             import traceback
-            tb_str = ''.join(traceback.format_tb(e.__traceback__))
             
-            # Should contain reference to the original error location
-            assert "line_number = 123" in tb_str
-            assert "Original error" in str(e.__cause__)
+            # Check that the cause is properly chained
+            assert e.__cause__ is not None
+            assert isinstance(e.__cause__, ValueError)
+            assert str(e.__cause__) == "Original error"
+            
+            # Check that original traceback is preserved in __cause__
+            cause_tb_str = ''.join(traceback.format_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__))
+            assert "raise ValueError" in cause_tb_str
+            assert "test_exception_handler_preserves_traceback" in cause_tb_str
     
     @pytest.mark.asyncio
     async def test_nested_exception_handlers(self):

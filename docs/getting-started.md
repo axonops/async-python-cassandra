@@ -93,17 +93,85 @@ cluster = AsyncCluster.create_with_auth(
 
 ### Using Context Managers
 
-The recommended way to manage connections is with async context managers:
+Context managers provide automatic resource management, ensuring that connections are properly closed even if errors occur. This is the recommended way to manage connections in async-cassandra.
+
+#### What are Context Managers?
+
+Context managers automatically handle setup and cleanup operations. When you use `async with`, Python guarantees that:
+1. The connection is opened when entering the block
+2. The connection is closed when exiting the block (even if an error occurs)
+3. Resources are not leaked
+
+#### Basic Usage
 
 ```python
 from async_cassandra import AsyncCluster
 
 async def main():
+    # Without context manager (manual cleanup required)
+    cluster = AsyncCluster(['localhost'])
+    session = await cluster.connect('my_keyspace')
+    try:
+        result = await session.execute("SELECT * FROM users")
+    finally:
+        await session.close()
+        await cluster.shutdown()
+    
+    # With context manager (automatic cleanup)
     async with AsyncCluster(['localhost']) as cluster:
         async with await cluster.connect('my_keyspace') as session:
-            # Your queries here
             result = await session.execute("SELECT * FROM users")
-            # Session and cluster are automatically closed
+            # Both session and cluster are automatically closed
+```
+
+#### Benefits
+
+1. **Automatic Cleanup**: No need to remember to call `close()` or `shutdown()`
+2. **Exception Safety**: Resources are cleaned up even if an error occurs
+3. **Cleaner Code**: Less boilerplate code for resource management
+4. **No Resource Leaks**: Connections are guaranteed to be closed
+
+#### Nested Context Managers
+
+You can combine multiple context managers for cleaner code:
+
+```python
+async def process_data():
+    async with AsyncCluster(['localhost']) as cluster:
+        async with await cluster.connect('my_keyspace') as session:
+            # Both cluster and session are managed
+            async for row in await session.execute("SELECT * FROM large_table"):
+                process_row(row)
+            # Session closed here
+        # Cluster closed here
+```
+
+#### Real-World Example
+
+```python
+import asyncio
+from async_cassandra import AsyncCluster, AsyncCassandraError
+
+async def safe_database_operation():
+    try:
+        async with AsyncCluster(['localhost']) as cluster:
+            async with await cluster.connect('my_keyspace') as session:
+                # Prepare statement
+                stmt = await session.prepare(
+                    "INSERT INTO events (id, data) VALUES (?, ?)"
+                )
+                
+                # Execute with automatic cleanup
+                await session.execute(stmt, [event_id, event_data])
+                
+                # Even if this fails, connections are cleaned up
+                result = await session.execute("SELECT * FROM events")
+                return result.all()
+                
+    except AsyncCassandraError as e:
+        print(f"Database error: {e}")
+        # Connections are already closed by context managers
+        return []
 ```
 
 ## Executing Queries
@@ -248,7 +316,7 @@ delete_stmt = SimpleStatement(
 )
 ```
 
-**Important**: The retry policy will only retry write operations that are marked as idempotent to prevent data corruption.
+**Important**: The retry policy will ONLY retry write operations that are explicitly marked with `is_idempotent=True`. Queries without this attribute or with `is_idempotent=False` or `is_idempotent=None` will NOT be retried to prevent data corruption. This is a strict safety measure - you must explicitly opt-in to retries for write operations.
 
 ## Error Handling
 
@@ -300,5 +368,5 @@ Now that you understand the basics:
 ## Need Help?
 
 - **Issues**: Report bugs on [GitHub](https://github.com/axonops/async-python-cassandra/issues)
-- **Questions**: Contact us at community@axonops.com
+- **Questions**: Ask on [GitHub Discussions](https://github.com/axonops/async-python-cassandra/discussions)
 - **Learn more**: Visit [AxonOps](https://axonops.com)

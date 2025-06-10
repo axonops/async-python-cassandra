@@ -50,21 +50,21 @@ graph LR
 
 ### Resource Efficiency
 
-| Metric | Sync Driver (1000 concurrent) | async-cassandra (1000 concurrent) |
-|--------|------------------------------|-----------------------------------|
-| Threads | 100+ | 1-4 |
-| Memory | ~500MB | ~50MB |
-| Context Switches | High | Low |
-| CPU Usage | 80% | 20% |
+async-cassandra eliminates the thread pool bottleneck by using the event loop for I/O operations. This typically results in:
 
-## Benchmarks
+- **Fewer threads**: Only the main thread and event loop threads are needed
+- **Lower memory usage**: No thread pool overhead
+- **Reduced context switching**: Cooperative multitasking via async/await
+- **Better CPU utilization**: Less time spent in thread management
 
-### Query Latency
+The actual resource savings will depend on your workload and concurrency levels.
 
-Performance comparison for different concurrency levels:
+## Benchmarking Your Application
+
+To understand the performance characteristics of async-cassandra in your specific use case, you should benchmark with your actual workload:
 
 ```python
-# Benchmark setup
+# Example benchmark setup
 async def benchmark_async(session, queries=1000):
     start = time.time()
     
@@ -81,36 +81,25 @@ async def benchmark_async(session, queries=1000):
     return time.time() - start
 ```
 
-Results:
+### What to Measure
 
-| Concurrent Queries | Sync Driver | async-cassandra | Improvement |
-|-------------------|-------------|-----------------|-------------|
-| 10 | 0.5s | 0.4s | 1.25x |
-| 100 | 2.3s | 0.8s | 2.9x |
-| 1000 | 23.5s | 7.2s | 3.3x |
-| 10000 | 240s | 68s | 3.5x |
+When benchmarking, consider measuring:
 
-### Throughput
+1. **Query latency** at different concurrency levels
+2. **Throughput** (queries per second)
+3. **Resource usage** (CPU, memory, threads)
+4. **Error rates** under load
+5. **Connection pool efficiency**
 
-Requests per second under sustained load:
+### Factors Affecting Performance
 
-```mermaid
-graph TD
-    subgraph "Throughput Comparison"
-        A[Load Level] --> B[Light: 10 req/s]
-        A --> C[Medium: 100 req/s]
-        A --> D[Heavy: 1000 req/s]
-        
-        B --> B1[Sync: 100% success]
-        B --> B2[Async: 100% success]
-        
-        C --> C1[Sync: 95% success]
-        C --> C2[Async: 100% success]
-        
-        D --> D1[Sync: 60% success]
-        D --> D2[Async: 99% success]
-    end
-```
+Performance will vary based on:
+
+- **Query complexity**: Simple key lookups vs. complex aggregations
+- **Data size**: Row size and result set size
+- **Network latency**: Local vs. remote Cassandra cluster
+- **Cluster configuration**: Replication factor, consistency levels
+- **Hardware**: CPU cores, memory, network bandwidth
 
 ## Optimization Techniques
 

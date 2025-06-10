@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 """
-Example demonstrating metrics and observability features of async-cassandra.
+Comprehensive example of metrics collection with async-cassandra.
 
-This example shows how to:
-1. Set up metrics collection
-2. Monitor query performance
-3. Track connection health
-4. Export metrics to Prometheus
-5. Create custom dashboards
+This example demonstrates:
+- Setting up multiple metrics collectors
+- Monitoring query performance
+- Tracking connection health
+- Exporting metrics to Prometheus
+- Custom metrics analysis
 """
 
 import asyncio
 import time
 import uuid
 from datetime import datetime
-
 from async_cassandra import AsyncCluster
-from async_cassandra.metrics import create_metrics_system
+from async_cassandra.metrics import (
+    InMemoryMetricsCollector,
+    create_metrics_system,
+    QueryMetrics,
+    ConnectionMetrics,
+    MetricsCollector
+)
+from async_cassandra.monitoring import ConnectionMonitor
 
 
 async def main():

@@ -370,5 +370,4 @@ If you're still having issues:
 
 **Contact:**
 - GitHub Issues: https://github.com/axonops/async-python-cassandra/issues
-- Email: community@axonops.com
 - Website: https://axonops.com
