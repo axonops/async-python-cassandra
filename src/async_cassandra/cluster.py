@@ -17,12 +17,13 @@ from cassandra.policies import (
     TokenAwarePolicy,
 )
 
+from .base import AsyncCloseable, AsyncContextManageable, check_not_closed
 from .exceptions import ConnectionError
 from .retry_policy import AsyncRetryPolicy
 from .session import AsyncCassandraSession
 
 
-class AsyncCluster:
+class AsyncCluster(AsyncCloseable, AsyncContextManageable):
     """
     Async wrapper for Cassandra Cluster.
 
@@ -82,28 +83,35 @@ class AsyncCluster:
         if retry_policy is None:
             retry_policy = AsyncRetryPolicy()
 
-        # Create the underlying cluster
-        self._cluster = Cluster(
-            contact_points=contact_points,
-            port=port,
-            auth_provider=auth_provider,
-            load_balancing_policy=load_balancing_policy,
-            reconnection_policy=reconnection_policy,
-            default_retry_policy=retry_policy,
-            ssl_context=ssl_context,
-            protocol_version=protocol_version,
-            executor_threads=executor_threads,
-            max_schema_agreement_wait=max_schema_agreement_wait,
-            control_connection_timeout=control_connection_timeout,
-            idle_heartbeat_interval=idle_heartbeat_interval,
-            schema_event_refresh_window=schema_event_refresh_window,
-            topology_event_refresh_window=topology_event_refresh_window,
-            status_event_refresh_window=status_event_refresh_window,
-            **kwargs,
-        )
-
-        self._closed = False
-        self._shutdown_lock = asyncio.Lock()
+        # Create the underlying cluster with only non-None parameters
+        cluster_kwargs = {
+            'contact_points': contact_points,
+            'port': port,
+            'load_balancing_policy': load_balancing_policy,
+            'reconnection_policy': reconnection_policy,
+            'default_retry_policy': retry_policy,
+            'executor_threads': executor_threads,
+            'max_schema_agreement_wait': max_schema_agreement_wait,
+            'control_connection_timeout': control_connection_timeout,
+            'idle_heartbeat_interval': idle_heartbeat_interval,
+            'schema_event_refresh_window': schema_event_refresh_window,
+            'topology_event_refresh_window': topology_event_refresh_window,
+            'status_event_refresh_window': status_event_refresh_window,
+        }
+        
+        # Add optional parameters only if they're not None
+        if auth_provider is not None:
+            cluster_kwargs['auth_provider'] = auth_provider
+        if ssl_context is not None:
+            cluster_kwargs['ssl_context'] = ssl_context
+        if protocol_version is not None:
+            cluster_kwargs['protocol_version'] = protocol_version
+            
+        # Merge with any additional kwargs
+        cluster_kwargs.update(kwargs)
+        
+        super().__init__()
+        self._cluster = Cluster(**cluster_kwargs)
 
     @classmethod
     def create_with_auth(
@@ -125,6 +133,7 @@ class AsyncCluster:
 
         return cls(contact_points=contact_points, auth_provider=auth_provider, **kwargs)
 
+    @check_not_closed
     async def connect(self, keyspace: Optional[str] = None) -> AsyncCassandraSession:
         """
         Connect to the cluster and create a session.
@@ -138,9 +147,6 @@ class AsyncCluster:
         Raises:
             ConnectionError: If connection fails.
         """
-        if self._closed:
-            raise ConnectionError("Cluster is closed")
-
         try:
             session = await AsyncCassandraSession.create(self._cluster, keyspace)
             return session
@@ -148,31 +154,18 @@ class AsyncCluster:
         except Exception as e:
             raise ConnectionError(f"Failed to connect to cluster: {str(e)}", cause=e)
 
+    async def _do_close(self) -> None:
+        """Perform the actual cluster shutdown."""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._cluster.shutdown)
+
     async def shutdown(self) -> None:
         """
         Shutdown the cluster and release all resources.
 
         This method is idempotent and can be called multiple times safely.
         """
-        async with self._shutdown_lock:
-            if not self._closed:
-                self._closed = True
-
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._cluster.shutdown)
-
-    async def __aenter__(self) -> "AsyncCluster":
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Async context manager exit."""
-        await self.shutdown()
-
-    @property
-    def is_closed(self) -> bool:
-        """Check if cluster is closed."""
-        return self._closed
+        await self.close()
 
     @property
     def metadata(self) -> Any:

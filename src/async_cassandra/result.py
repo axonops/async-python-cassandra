@@ -27,7 +27,8 @@ class AsyncResultHandler:
 
     def _handle_page(self, rows: List[Any]) -> None:
         """Handle successful page retrieval."""
-        self.rows.extend(rows)
+        if rows is not None:
+            self.rows.extend(rows)
 
         if self.response_future.has_more_pages:
             self.response_future.start_fetching_next_page()

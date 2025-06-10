@@ -5,15 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "async-cassandra"
 version = "0.1.0"
-description = "Async Python wrapper for the DataStax Cassandra driver"
+description = "Async Python wrapper for the Cassandra Python driver"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "Apache-2.0"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "AxonOps", email = "community@axonops.com"},
 ]
 maintainers = [
-    {name = "Your Name", email = "your.email@example.com"},
+    {name = "AxonOps", email = "community@axonops.com"},
 ]
 keywords = ["cassandra", "async", "asyncio", "database", "nosql"]
 classifiers = [
@@ -66,10 +66,11 @@ docs = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/yourusername/async-python-cassandra"
-"Bug Tracker" = "https://github.com/yourusername/async-python-cassandra/issues"
+"Homepage" = "https://github.com/axonops/async-python-cassandra"
+"Bug Tracker" = "https://github.com/axonops/async-python-cassandra/issues"
 "Documentation" = "https://async-python-cassandra.readthedocs.io"
-"Source Code" = "https://github.com/yourusername/async-python-cassandra"
+"Source Code" = "https://github.com/axonops/async-python-cassandra"
+"Organization" = "https://axonops.com"
 
 [tool.setuptools.packages.find]
 where = ["src"]

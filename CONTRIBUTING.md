@@ -15,7 +15,7 @@ First off, thank you for considering contributing to async-python-cassandra! It'
 
 ## Code of Conduct
 
-This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to the project maintainers.
+This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to community@axonops.com.
 
 ## Getting Started
 
@@ -248,6 +248,9 @@ def execute_async(query: str, parameters: Optional[List] = None) -> Future[Resul
 
 ## Questions?
 
-Feel free to open an issue with your question or reach out to the maintainers directly.
+Feel free to:
+- Open an issue on our [GitHub Issues](https://github.com/axonops/async-python-cassandra/issues) page
+- Contact us at community@axonops.com
+- Visit [AxonOps](https://axonops.com) to learn more about our work
 
 Thank you for contributing! 🎉

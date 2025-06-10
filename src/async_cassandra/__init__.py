@@ -1,5 +1,5 @@
 """
-async-cassandra: Async Python wrapper for the DataStax Cassandra driver.
+async-cassandra: Async Python wrapper for the Cassandra Python driver.
 
 This package provides true async/await support for Cassandra operations,
 addressing performance limitations when using the official driver with
@@ -7,14 +7,22 @@ async frameworks like FastAPI.
 """
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+__author__ = "AxonOps"
+__email__ = "community@axonops.com"
 
 from .cluster import AsyncCluster
 from .exceptions import AsyncCassandraError, ConnectionError, QueryError
 from .result import AsyncResultSet
 from .retry_policy import AsyncRetryPolicy
 from .session import AsyncCassandraSession
+from .monitoring import (
+    ConnectionMonitor,
+    RateLimitedSession,
+    create_monitored_session,
+    HostStatus,
+    HostMetrics,
+    ClusterMetrics,
+)
 
 __all__ = [
     "AsyncCassandraSession",
@@ -24,4 +32,10 @@ __all__ = [
     "QueryError",
     "AsyncResultSet",
     "AsyncRetryPolicy",
+    "ConnectionMonitor",
+    "RateLimitedSession",
+    "create_monitored_session",
+    "HostStatus",
+    "HostMetrics",
+    "ClusterMetrics",
 ]

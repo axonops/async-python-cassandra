@@ -4,30 +4,46 @@ Integration tests for FastAPI example application.
 
 import uuid
 import pytest
+import pytest_asyncio
 import asyncio
 from typing import AsyncGenerator
 from httpx import AsyncClient
 
 from fastapi.testclient import TestClient
-from testcontainers.compose import DockerCompose
 
 from main import app
 
 
 @pytest.fixture(scope="session")
 def cassandra_service():
-    """Start Cassandra service for tests."""
-    compose = DockerCompose(filepath=".", compose_file_name="docker-compose.test.yml", pull=True)
+    """Use existing Cassandra service for tests."""
+    # Cassandra should already be running on localhost:9042
+    # Check if it's available
+    import socket
+    import time
+    
+    max_attempts = 10
+    for i in range(max_attempts):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('localhost', 9042))
+            sock.close()
+            if result == 0:
+                yield True
+                return
+        except:
+            pass
+        time.sleep(1)
+    
+    raise RuntimeError("Cassandra is not available on localhost:9042")
 
-    with compose:
-        compose.wait_for("tcp://localhost:9042")
-        yield compose
 
-
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """Create async HTTP client for tests."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    # Use the actual running server
+    async with AsyncClient(base_url="http://localhost:8000") as ac:
         yield ac
 
 

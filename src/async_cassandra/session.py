@@ -15,11 +15,12 @@ from cassandra import (
 from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Session
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
+from .base import AsyncCloseable, AsyncContextManageable, check_not_closed, ExceptionHandler
 from .exceptions import ConnectionError, QueryError
 from .result import AsyncResultHandler, AsyncResultSet
 
 
-class AsyncCassandraSession:
+class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
     """
     Async wrapper for Cassandra Session.
 
@@ -33,9 +34,8 @@ class AsyncCassandraSession:
         Args:
             session: The underlying Cassandra session.
         """
+        super().__init__()
         self._session = session
-        self._closed = False
-        self._close_lock = asyncio.Lock()
 
     @classmethod
     async def create(cls, cluster: Any, keyspace: Optional[str] = None) -> "AsyncCassandraSession":
@@ -90,10 +90,11 @@ class AsyncCassandraSession:
         Raises:
             QueryError: If query execution fails.
         """
-        if self._closed:
-            raise ConnectionError("Session is closed")
+        self._check_not_closed()
 
-        try:
+        cassandra_exceptions = (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut)
+        
+        async with ExceptionHandler("Query execution failed", QueryError, cassandra_exceptions):
             response_future = self._session.execute_async(
                 query,
                 parameters,
@@ -108,13 +109,6 @@ class AsyncCassandraSession:
 
             handler = AsyncResultHandler(response_future)
             return await handler.get_result()
-
-        except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
-            # Re-raise Cassandra-specific exceptions as-is for proper handling
-            raise
-        except Exception as e:
-            # Wrap other exceptions in QueryError
-            raise QueryError(f"Query execution failed: {str(e)}", cause=e)
 
     async def execute_batch(
         self,
@@ -148,6 +142,7 @@ class AsyncCassandraSession:
             execution_profile=execution_profile,
         )
 
+    @check_not_closed
     async def prepare(
         self, query: str, custom_payload: Optional[Dict[str, bytes]] = None
     ) -> PreparedStatement:
@@ -164,10 +159,9 @@ class AsyncCassandraSession:
         Raises:
             QueryError: If statement preparation fails.
         """
-        if self._closed:
-            raise ConnectionError("Session is closed")
-
-        try:
+        cassandra_exceptions = (InvalidRequest, OperationTimedOut)
+        
+        async with ExceptionHandler("Statement preparation failed", QueryError, cassandra_exceptions):
             loop = asyncio.get_event_loop()
 
             # Prepare in executor to avoid blocking
@@ -177,38 +171,10 @@ class AsyncCassandraSession:
 
             return prepared
 
-        except (InvalidRequest, OperationTimedOut) as e:
-            # Re-raise Cassandra-specific exceptions as-is
-            raise
-        except Exception as e:
-            # Wrap other exceptions in QueryError
-            raise QueryError(f"Statement preparation failed: {str(e)}", cause=e)
-
-    async def close(self) -> None:
-        """
-        Close the session and release resources.
-
-        This method is idempotent and can be called multiple times safely.
-        """
-        async with self._close_lock:
-            if not self._closed:
-                self._closed = True
-
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._session.shutdown)
-
-    async def __aenter__(self) -> "AsyncCassandraSession":
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Async context manager exit."""
-        await self.close()
-
-    @property
-    def is_closed(self) -> bool:
-        """Check if session is closed."""
-        return self._closed
+    async def _do_close(self) -> None:
+        """Perform the actual session shutdown."""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._session.shutdown)
 
     @property
     def keyspace(self) -> Optional[str]:

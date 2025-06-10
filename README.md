@@ -2,25 +2,27 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
-[![Tests](https://github.com/yourusername/async-python-cassandra/actions/workflows/tests.yml/badge.svg)](https://github.com/yourusername/async-python-cassandra/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/yourusername/async-python-cassandra/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/async-python-cassandra)
+[![Tests](https://github.com/axonops/async-python-cassandra/actions/workflows/tests.yml/badge.svg)](https://github.com/axonops/async-python-cassandra/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/axonops/async-python-cassandra/branch/main/graph/badge.svg)](https://codecov.io/gh/axonops/async-python-cassandra)
 
 ## ✨ Overview
 
-An async Python wrapper for the DataStax Cassandra driver that provides true asynchronous operations, addressing the performance limitations of the official driver when used with async frameworks like FastAPI.
+An async Python wrapper for the Cassandra Python driver that provides true asynchronous operations, addressing the performance limitations of the official driver when used with async frameworks like FastAPI.
 
 The official Cassandra Python driver uses a separate thread pool for I/O operations, which can become a bottleneck in high-concurrency async applications. This library wraps the driver's async functionality to provide proper async/await support that integrates seamlessly with Python's asyncio event loop.
 
 ## 🚀 Key Features
 
 - ✅ True async/await support for Cassandra operations
-- ✅ Connection pooling optimized for async workloads
+- ✅ Optimized for Python's single connection per host limitation
 - ✅ Automatic retries with configurable policies
 - ✅ Support for prepared statements and batch operations
 - ✅ Type hints and full typing support
 - ✅ Compatible with FastAPI, aiohttp, and other async frameworks
 - ✅ Comprehensive test coverage including integration tests
 - ✅ Performance optimized for high-concurrency scenarios
+
+> **Important**: The Python Cassandra driver maintains only one TCP connection per host when using protocol v3+ (Cassandra 2.1+). This is a driver limitation due to Python's Global Interpreter Lock (GIL). See our [Connection Pooling Documentation](docs/connection-pooling.md) for details.
 
 ## 📋 Requirements
 
@@ -42,48 +44,37 @@ pip install -e .
 
 ```python
 import asyncio
-from async_cassandra import AsyncCassandraSession
+from async_cassandra import AsyncCluster
 
 async def main():
-    # Create a session
-    session = await AsyncCassandraSession.create(
-        contact_points=['localhost'],
-        keyspace='my_keyspace'
-    )
+    # Connect to Cassandra
+    cluster = AsyncCluster(['localhost'])
+    session = await cluster.connect()
     
-    # Execute a query
-    result = await session.execute("SELECT * FROM users WHERE id = ?", [user_id])
+    # Execute queries
+    result = await session.execute("SELECT * FROM system.local")
+    print(f"Connected to: {result.one().cluster_name}")
     
-    # Process results
-    async for row in result:
-        print(row)
-    
-    # Close the session
+    # Clean up
     await session.close()
+    await cluster.shutdown()
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## 🏗️ Architecture
+For more detailed examples, see our [Getting Started Guide](docs/getting-started.md).
 
-This library provides an async wrapper around the DataStax Cassandra driver, converting callback-based operations into proper async/await coroutines. Here's how it works:
+## 🏗️ Why async-cassandra?
 
-```mermaid
-sequenceDiagram
-    participant App as Application
-    participant Async as AsyncCassandra
-    participant Driver as Cassandra Driver
-    participant DB as Cassandra DB
-    
-    App->>Async: await execute(query)
-    Async->>Driver: execute_async(query)
-    Note over Async: Creates Future
-    Driver->>DB: Send Query
-    DB-->>Driver: Response
-    Driver-->>Async: Callback triggered
-    Async-->>App: Return result
-```
+The Cassandra Python driver uses a thread pool for I/O operations, which can become a bottleneck in async applications. This library provides true async/await support, enabling:
+
+- **Better Performance**: Handle thousands of concurrent queries efficiently
+- **Lower Resource Usage**: No thread pool overhead
+- **Seamless Integration**: Works naturally with FastAPI, aiohttp, and other async frameworks
+- **Proper Backpressure**: Async operations allow better control over concurrency
+
+See our [Architecture Overview](docs/architecture.md) for technical details.
 
 ## 🧪 Testing
 
@@ -107,15 +98,27 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 **Important**: All contributors must sign our [Contributor License Agreement (CLA)](CLA.md) before their pull request can be merged.
 
+## 📞 Support
+
+- **Issues**: Please report bugs and feature requests on our [GitHub Issues](https://github.com/axonops/async-python-cassandra/issues) page
+- **Community**: For questions and discussions, contact us at community@axonops.com
+- **Company**: Learn more about AxonOps at [https://axonops.com](https://axonops.com)
+
 ## 📖 Documentation
 
-- [API Reference](docs/api.md)
-- [Performance Guide](docs/performance.md)
-- [Architecture Overview](docs/architecture.md)
-- [Examples](examples/)
-  - [FastAPI Integration Example](examples/fastapi_app/README.md)
-  - [API Sequence Diagrams](examples/fastapi_app/SEQUENCE_DIAGRAMS.md)
-  - [API Documentation](examples/fastapi_app/API_DOCUMENTATION.md)
+### Getting Started
+- [Getting Started Guide](docs/getting-started.md) - **Start here!**
+- [API Reference](docs/api.md) - Detailed API documentation
+- [Troubleshooting Guide](docs/troubleshooting.md) - Common issues and solutions
+
+### Advanced Topics
+- [Connection Pooling Guide](docs/connection-pooling.md) - Understanding Python driver limitations
+- [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
+- [Architecture Overview](docs/architecture.md) - Technical deep dive
+
+### Examples
+- [FastAPI Integration](examples/fastapi_app/README.md) - Complete REST API example
+- [More Examples](examples/) - Additional usage patterns
 
 ## ⚡ Performance
 
@@ -132,7 +135,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 🙏 Acknowledgments
 
-- DataStax for the excellent Cassandra Python driver
+- DataStax for the [Python Driver for Apache Cassandra](https://github.com/datastax/python-driver)
 - The Python asyncio community for inspiration and best practices
 - All contributors who help make this project better
 
