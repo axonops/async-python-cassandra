@@ -142,11 +142,11 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## ⚖️ Legal Notices
 
-### Trademarks
+*This project may contain trademarks or logos for projects, products, or services. Any use of third-party trademarks or logos are subject to those third-party's policies.*
 
-Apache®, Apache Cassandra®, are either registered trademarks or trademarks of the Apache Software Foundation in the United States and/or other countries. This project is not affiliated with, endorsed by, or sponsored by the Apache Software Foundation.
-
-DataStax is a registered trademark of DataStax, Inc. and its subsidiaries in the United States and/or other countries.
+- **AxonOps** is a registered trademark of AxonOps Limited.
+- **Apache**, **Apache Cassandra**, **Cassandra**, **Apache Spark**, **Spark**, **Apache TinkerPop**, **TinkerPop**, **Apache Kafka** and **Kafka** are either registered trademarks or trademarks of the Apache Software Foundation or its subsidiaries in Canada, the United States and/or other countries.
+- **DataStax** is a registered trademark of DataStax, Inc. and its subsidiaries in the United States and/or other countries.
 
 ### Copyright
 
