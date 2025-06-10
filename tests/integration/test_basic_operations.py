@@ -46,16 +46,14 @@ class TestBasicOperations:
         """Test inserting and selecting data."""
         # Clean up table
         await cassandra_session.execute("TRUNCATE users")
-        
+
         user_id = uuid.uuid4()
 
         # Prepare statements
         insert_stmt = await cassandra_session.prepare(
             "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
         )
-        select_stmt = await cassandra_session.prepare(
-            "SELECT * FROM users WHERE id = ?"
-        )
+        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
 
         # Insert data
         await cassandra_session.execute(insert_stmt, [user_id, "John Doe", "john@example.com", 30])
@@ -78,7 +76,7 @@ class TestBasicOperations:
         """Test using prepared statements."""
         # Clean up table
         await cassandra_session.execute("TRUNCATE users")
-        
+
         # Prepare insert statement
         insert_stmt = await cassandra_session.prepare(
             """
@@ -149,7 +147,7 @@ class TestBasicOperations:
         """Test async iteration over results."""
         # Clean up table
         await cassandra_session.execute("TRUNCATE users")
-        
+
         # Insert test data
         insert_stmt = await cassandra_session.prepare(
             """

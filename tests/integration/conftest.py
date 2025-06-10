@@ -3,6 +3,7 @@ Pytest configuration for integration tests.
 """
 
 import pytest_asyncio
+
 from async_cassandra import AsyncCluster
 
 
@@ -18,7 +19,7 @@ async def cassandra_cluster():
 async def cassandra_session(cassandra_cluster):
     """Create an async Cassandra session for testing."""
     session = await cassandra_cluster.connect()
-    
+
     # Create test keyspace
     await session.execute(
         """
@@ -29,9 +30,9 @@ async def cassandra_session(cassandra_cluster):
         }
         """
     )
-    
+
     await session.set_keyspace("test_async_cassandra")
-    
+
     # Create test table
     await session.execute(
         """
@@ -43,8 +44,8 @@ async def cassandra_session(cassandra_cluster):
         )
         """
     )
-    
+
     yield session
-    
+
     # Cleanup
     await session.close()

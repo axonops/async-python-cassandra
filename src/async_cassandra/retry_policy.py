@@ -5,7 +5,7 @@ Async-aware retry policies for Cassandra operations.
 from typing import Optional, Tuple, Union
 
 from cassandra.policies import RetryPolicy
-from cassandra.query import ConsistencyLevel, SimpleStatement, PreparedStatement, BatchStatement
+from cassandra.query import BatchStatement, ConsistencyLevel, PreparedStatement, SimpleStatement
 
 
 class AsyncRetryPolicy(RetryPolicy):
@@ -94,10 +94,10 @@ class AsyncRetryPolicy(RetryPolicy):
         # - Duplicate inserts
         # - Multiple increments/decrements
         # - Data corruption
-        
+
         # Check if query has is_idempotent attribute and if it's exactly True
         # Only retry if is_idempotent is explicitly True (not truthy values)
-        if getattr(query, 'is_idempotent', None) is not True:
+        if getattr(query, "is_idempotent", None) is not True:
             # Query is not idempotent or not explicitly marked as True - do not retry
             return self.RETHROW, None
 
@@ -139,7 +139,11 @@ class AsyncRetryPolicy(RetryPolicy):
         return self.RETRY, consistency
 
     def on_request_error(
-        self, query: Union[SimpleStatement, PreparedStatement, BatchStatement], consistency: ConsistencyLevel, error: Exception, retry_num: int
+        self,
+        query: Union[SimpleStatement, PreparedStatement, BatchStatement],
+        consistency: ConsistencyLevel,
+        error: Exception,
+        retry_num: int,
     ) -> Tuple[int, Optional[ConsistencyLevel]]:
         """
         Handle request error.

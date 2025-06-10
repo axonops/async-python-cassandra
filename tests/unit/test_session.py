@@ -205,11 +205,11 @@ class TestAsyncCassandraSession:
         """Test setting keyspace with invalid name."""
         # Test various invalid keyspace names
         invalid_names = ["", "keyspace with spaces", "keyspace-with-dash", "keyspace;drop"]
-        
+
         for invalid_name in invalid_names:
             with pytest.raises(ValueError) as exc_info:
                 await async_session.set_keyspace(invalid_name)
-            
+
             assert "Invalid keyspace name" in str(exc_info.value)
 
     def test_keyspace_property(self, async_session, mock_session):

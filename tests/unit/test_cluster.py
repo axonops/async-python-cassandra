@@ -2,16 +2,13 @@
 Unit tests for async cluster management.
 """
 
-from ssl import SSLContext, PROTOCOL_TLS_CLIENT
+from ssl import PROTOCOL_TLS_CLIENT, SSLContext
 from unittest.mock import Mock, patch
 
 import pytest
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster
-from cassandra.policies import (
-    ExponentialReconnectionPolicy,
-    TokenAwarePolicy,
-)
+from cassandra.policies import ExponentialReconnectionPolicy, TokenAwarePolicy
 
 from async_cassandra.cluster import AsyncCluster
 from async_cassandra.exceptions import ConnectionError

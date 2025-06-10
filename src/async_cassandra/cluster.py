@@ -85,31 +85,31 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
 
         # Create the underlying cluster with only non-None parameters
         cluster_kwargs = {
-            'contact_points': contact_points,
-            'port': port,
-            'load_balancing_policy': load_balancing_policy,
-            'reconnection_policy': reconnection_policy,
-            'default_retry_policy': retry_policy,
-            'executor_threads': executor_threads,
-            'max_schema_agreement_wait': max_schema_agreement_wait,
-            'control_connection_timeout': control_connection_timeout,
-            'idle_heartbeat_interval': idle_heartbeat_interval,
-            'schema_event_refresh_window': schema_event_refresh_window,
-            'topology_event_refresh_window': topology_event_refresh_window,
-            'status_event_refresh_window': status_event_refresh_window,
+            "contact_points": contact_points,
+            "port": port,
+            "load_balancing_policy": load_balancing_policy,
+            "reconnection_policy": reconnection_policy,
+            "default_retry_policy": retry_policy,
+            "executor_threads": executor_threads,
+            "max_schema_agreement_wait": max_schema_agreement_wait,
+            "control_connection_timeout": control_connection_timeout,
+            "idle_heartbeat_interval": idle_heartbeat_interval,
+            "schema_event_refresh_window": schema_event_refresh_window,
+            "topology_event_refresh_window": topology_event_refresh_window,
+            "status_event_refresh_window": status_event_refresh_window,
         }
-        
+
         # Add optional parameters only if they're not None
         if auth_provider is not None:
-            cluster_kwargs['auth_provider'] = auth_provider
+            cluster_kwargs["auth_provider"] = auth_provider
         if ssl_context is not None:
-            cluster_kwargs['ssl_context'] = ssl_context
+            cluster_kwargs["ssl_context"] = ssl_context
         if protocol_version is not None:
-            cluster_kwargs['protocol_version'] = protocol_version
-            
+            cluster_kwargs["protocol_version"] = protocol_version
+
         # Merge with any additional kwargs
         cluster_kwargs.update(kwargs)
-        
+
         super().__init__()
         self._cluster = Cluster(**cluster_kwargs)
 
