@@ -3,6 +3,7 @@ Async session management for Cassandra connections.
 """
 
 import asyncio
+import time
 from typing import Dict, List, Optional, Union, Any
 
 from cassandra import (
@@ -19,6 +20,7 @@ from .base import AsyncCloseable, AsyncContextManageable, check_not_closed, Exce
 from .exceptions import ConnectionError, QueryError
 from .result import AsyncResultHandler, AsyncResultSet
 from .streaming import StreamingResultHandler, AsyncStreamingResultSet, StreamConfig
+from .metrics import MetricsMiddleware
 
 
 class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
@@ -28,15 +30,17 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
     Provides async/await interface for executing CQL queries against Cassandra.
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, metrics: Optional[MetricsMiddleware] = None):
         """
         Initialize async session wrapper.
 
         Args:
             session: The underlying Cassandra session.
+            metrics: Optional metrics middleware for observability.
         """
         super().__init__()
         self._session = session
+        self._metrics = metrics
 
     @classmethod
     async def create(cls, cluster: Cluster, keyspace: Optional[str] = None) -> "AsyncCassandraSession":
@@ -93,23 +97,53 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         """
         self._check_not_closed()
 
+        # Start metrics timing
+        start_time = time.perf_counter()
+        success = False
+        error_type = None
+        result_size = 0
+
         cassandra_exceptions = (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut)
         
-        async with ExceptionHandler("Query execution failed", QueryError, cassandra_exceptions):
-            response_future = self._session.execute_async(
-                query,
-                parameters,
-                trace,
-                custom_payload,
-                timeout,
-                execution_profile,
-                paging_state,
-                host,
-                execute_as,
-            )
+        try:
+            async with ExceptionHandler("Query execution failed", QueryError, cassandra_exceptions):
+                response_future = self._session.execute_async(
+                    query,
+                    parameters,
+                    trace,
+                    custom_payload,
+                    timeout,
+                    execution_profile,
+                    paging_state,
+                    host,
+                    execute_as,
+                )
 
-            handler = AsyncResultHandler(response_future)
-            return await handler.get_result()
+                handler = AsyncResultHandler(response_future)
+                result = await handler.get_result()
+                
+                success = True
+                result_size = len(result.rows) if hasattr(result, 'rows') else 0
+                return result
+                
+        except Exception as e:
+            error_type = type(e).__name__
+            raise
+        finally:
+            # Record metrics if middleware is available
+            if self._metrics:
+                duration = time.perf_counter() - start_time
+                query_str = str(query) if isinstance(query, (SimpleStatement, PreparedStatement)) else query
+                params_count = len(parameters) if parameters else 0
+                
+                await self._metrics.record_query_metrics(
+                    query=query_str,
+                    duration=duration,
+                    success=success,
+                    error_type=error_type,
+                    parameters_count=params_count,
+                    result_size=result_size
+                )
 
     @check_not_closed
     async def execute_stream(

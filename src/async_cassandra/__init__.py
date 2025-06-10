@@ -28,6 +28,15 @@ from .streaming import (
     StreamConfig,
     create_streaming_statement,
 )
+from .metrics import (
+    MetricsMiddleware,
+    MetricsCollector,
+    InMemoryMetricsCollector,
+    PrometheusMetricsCollector,
+    QueryMetrics,
+    ConnectionMetrics,
+    create_metrics_system,
+)
 
 __all__ = [
     "AsyncCassandraSession",
@@ -46,4 +55,11 @@ __all__ = [
     "AsyncStreamingResultSet",
     "StreamConfig",
     "create_streaming_statement",
+    "MetricsMiddleware",
+    "MetricsCollector",
+    "InMemoryMetricsCollector",
+    "PrometheusMetricsCollector",
+    "QueryMetrics",
+    "ConnectionMetrics",
+    "create_metrics_system",
 ]

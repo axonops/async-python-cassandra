@@ -44,33 +44,41 @@ class TestBasicOperations:
     @pytest.mark.integration
     async def test_insert_and_select(self, cassandra_session):
         """Test inserting and selecting data."""
+        # Clean up table
+        await cassandra_session.execute("TRUNCATE users")
+        
         user_id = uuid.uuid4()
 
-        # Insert data
-        await cassandra_session.execute(
-            """
-            INSERT INTO users (id, name, email, age)
-            VALUES (?, ?, ?, ?)
-            """,
-            [user_id, "John Doe", "john@example.com", 30],
+        # Prepare statements
+        insert_stmt = await cassandra_session.prepare(
+            "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)"
+        )
+        select_stmt = await cassandra_session.prepare(
+            "SELECT * FROM users WHERE id = ?"
         )
 
+        # Insert data
+        await cassandra_session.execute(insert_stmt, [user_id, "John Doe", "john@example.com", 30])
+
         # Select data
-        result = await cassandra_session.execute("SELECT * FROM users WHERE id = ?", [user_id])
+        result = await cassandra_session.execute(select_stmt, [user_id])
 
         rows = result.all()
         assert len(rows) == 1
 
         row = rows[0]
-        assert row["id"] == user_id
-        assert row["name"] == "John Doe"
-        assert row["email"] == "john@example.com"
-        assert row["age"] == 30
+        assert row.id == user_id
+        assert row.name == "John Doe"
+        assert row.email == "john@example.com"
+        assert row.age == 30
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_prepared_statements(self, cassandra_session):
         """Test using prepared statements."""
+        # Clean up table
+        await cassandra_session.execute("TRUNCATE users")
+        
         # Prepare insert statement
         insert_stmt = await cassandra_session.prepare(
             """
@@ -97,10 +105,10 @@ class TestBasicOperations:
             result = await cassandra_session.execute(select_stmt, [user_id])
             row = result.one()
 
-            assert row["id"] == user_id
-            assert row["name"] == name
-            assert row["email"] == email
-            assert row["age"] == age
+            assert row.id == user_id
+            assert row.name == name
+            assert row.email == email
+            assert row.age == age
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -129,15 +137,19 @@ class TestBasicOperations:
         await cassandra_session.execute_batch(batch)
 
         # Verify all users were inserted
+        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
         for i, user_id in enumerate(user_ids):
-            result = await cassandra_session.execute("SELECT * FROM users WHERE id = ?", [user_id])
+            result = await cassandra_session.execute(select_stmt, [user_id])
             row = result.one()
-            assert row["name"] == f"User{i}"
+            assert row.name == f"User{i}"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_async_iteration(self, cassandra_session):
         """Test async iteration over results."""
+        # Clean up table
+        await cassandra_session.execute("TRUNCATE users")
+        
         # Insert test data
         insert_stmt = await cassandra_session.prepare(
             """
@@ -157,8 +169,8 @@ class TestBasicOperations:
         # Iterate asynchronously
         count = 0
         async for row in result:
-            assert "name" in row
-            assert row["name"].startswith("User")
+            assert hasattr(row, "name")
+            assert row.name.startswith("User")
             count += 1
 
         assert count >= 10  # At least our inserted users
@@ -167,16 +179,16 @@ class TestBasicOperations:
     @pytest.mark.integration
     async def test_error_handling(self, cassandra_session):
         """Test error handling for invalid queries."""
-        from async_cassandra.exceptions import QueryError
+        from cassandra import InvalidRequest
 
         # Test invalid query
-        with pytest.raises(QueryError) as exc_info:
+        with pytest.raises(InvalidRequest) as exc_info:
             await cassandra_session.execute("SELECT * FROM non_existent_table")
 
-        assert "Query execution failed" in str(exc_info.value)
+        assert "does not exist" in str(exc_info.value)
 
         # Test invalid keyspace
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidRequest):
             await cassandra_session.set_keyspace("non_existent_keyspace")
 
     @pytest.mark.asyncio
@@ -205,6 +217,7 @@ class TestBasicOperations:
         user_ids = await asyncio.gather(*[insert_user(i) for i in range(20)])
 
         # Verify all were inserted
+        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE id = ?")
         for user_id in user_ids:
-            result = await cassandra_session.execute("SELECT * FROM users WHERE id = ?", [user_id])
+            result = await cassandra_session.execute(select_stmt, [user_id])
             assert result.one() is not None

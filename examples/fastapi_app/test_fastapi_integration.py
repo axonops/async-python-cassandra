@@ -42,9 +42,14 @@ def cassandra_service():
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """Create async HTTP client for tests."""
-    # Use the actual running server
-    async with AsyncClient(base_url="http://localhost:8000") as ac:
-        yield ac
+    from httpx import AsyncClient, ASGITransport
+    from main import app
+    
+    # Initialize the app lifespan context
+    async with app.router.lifespan_context(app):
+        # Use ASGI transport to test the app directly
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            yield ac
 
 
 class TestHealthEndpoint:
