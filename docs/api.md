@@ -271,7 +271,7 @@ print(f"Found {len(result)} users")
 
 ## AsyncRetryPolicy
 
-Retry policy for async operations.
+Retry policy for async operations with idempotency safety checks.
 
 ### Constructor
 
@@ -282,9 +282,32 @@ AsyncRetryPolicy(max_retries: int = 3)
 ### Retry Behavior
 
 - **Read Timeout**: Retries if data was retrieved or enough responses received
-- **Write Timeout**: Retries for SIMPLE and BATCH writes only
+- **Write Timeout**: Retries for SIMPLE and BATCH writes only if marked as idempotent
 - **Unavailable**: Tries next host on first attempt, then retries
 - **Request Error**: Always tries next host
+
+### Idempotency Safety
+
+The retry policy includes critical safety checks for write operations:
+
+```python
+# Safe to retry - marked as idempotent
+stmt = SimpleStatement(
+    "INSERT INTO users (id, name) VALUES (?, ?) IF NOT EXISTS",
+    is_idempotent=True
+)
+
+# NOT safe to retry - could cause duplicate inserts
+stmt = SimpleStatement(
+    "INSERT INTO users (id, name) VALUES (?, ?)",
+    is_idempotent=False  # or omit, defaults to False
+)
+```
+
+**Important**: Write operations (INSERT, UPDATE, DELETE) are only retried if the statement is explicitly marked with `is_idempotent=True`. This prevents:
+- Duplicate data insertions
+- Multiple increments/decrements
+- Unintended side effects from retrying non-idempotent operations
 
 ## Exceptions
 

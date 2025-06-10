@@ -89,7 +89,15 @@ class AsyncRetryPolicy(RetryPolicy):
         if retry_num >= self.max_retries:
             return self.RETHROW, None
 
-        # Only retry simple and batch writes
+        # CRITICAL: Only retry write operations if they are idempotent
+        # Non-idempotent writes should NEVER be retried as they could cause:
+        # - Duplicate inserts
+        # - Multiple increments/decrements
+        # - Data corruption
+        if hasattr(query, 'is_idempotent') and not query.is_idempotent:
+            return self.RETHROW, None
+
+        # Only retry simple and batch writes that are idempotent
         if write_type in ("SIMPLE", "BATCH"):
             return self.RETRY, consistency
 

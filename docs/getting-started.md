@@ -209,6 +209,47 @@ for user in users_to_insert:
 await session.execute(batch)  # Note: execute, not execute_batch
 ```
 
+## Idempotency and Retries
+
+When using async-cassandra, it's important to understand idempotency for safe retries:
+
+```python
+from cassandra.query import SimpleStatement
+
+# Mark queries as idempotent when they can be safely retried
+# SELECT queries are always safe to retry
+select_stmt = SimpleStatement(
+    "SELECT * FROM users WHERE id = ?",
+    is_idempotent=True  # Safe to retry
+)
+
+# INSERT with IF NOT EXISTS is idempotent
+insert_stmt = SimpleStatement(
+    "INSERT INTO users (id, name) VALUES (?, ?) IF NOT EXISTS",
+    is_idempotent=True  # Safe to retry
+)
+
+# Regular INSERT without IF NOT EXISTS - NOT idempotent
+insert_stmt = SimpleStatement(
+    "INSERT INTO users (id, name) VALUES (?, ?)",
+    is_idempotent=False  # Could create duplicates if retried
+)
+
+# UPDATE with increment - NOT idempotent
+update_stmt = SimpleStatement(
+    "UPDATE counters SET count = count + 1 WHERE id = ?",
+    is_idempotent=False  # Would increment multiple times if retried
+)
+
+# DELETE is usually idempotent
+delete_stmt = SimpleStatement(
+    "DELETE FROM users WHERE id = ?",
+    is_idempotent=True  # Safe to retry
+)
+```
+
+**Important**: The retry policy will only retry write operations that are marked as idempotent to prevent data corruption.
+
 ## Error Handling
 
 async-cassandra provides specific exception types for different error scenarios:
