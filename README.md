@@ -113,6 +113,9 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [Performance Guide](docs/performance.md)
 - [Architecture Overview](docs/architecture.md)
 - [Examples](examples/)
+  - [FastAPI Integration Example](examples/fastapi_app/README.md)
+  - [API Sequence Diagrams](examples/fastapi_app/SEQUENCE_DIAGRAMS.md)
+  - [API Documentation](examples/fastapi_app/API_DOCUMENTATION.md)
 
 ## ⚡ Performance
 

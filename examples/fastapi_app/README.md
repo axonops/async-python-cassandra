@@ -9,6 +9,7 @@ This example demonstrates how to build a high-performance REST API using FastAPI
 - [Installation](#installation)
 - [Running the Application](#running-the-application)
 - [API Endpoints](#api-endpoints)
+- [Sequence Diagrams](#sequence-diagrams)
 - [Performance Testing](#performance-testing)
 - [Docker Deployment](#docker-deployment)
 - [Best Practices](#best-practices)
@@ -264,6 +265,16 @@ Simulates synchronous query execution for comparison:
 ```bash
 curl "http://localhost:8000/performance/sync?requests=100"
 ```
+
+## Sequence Diagrams
+
+Detailed sequence diagrams showing the flow of each API endpoint are available in [SEQUENCE_DIAGRAMS.md](SEQUENCE_DIAGRAMS.md). These diagrams illustrate:
+
+- Request/response flow for each endpoint
+- Async execution patterns
+- Error handling scenarios
+- Database interaction details
+- Performance comparison between async and sync operations
 
 ## Performance Testing
 
