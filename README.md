@@ -25,10 +25,10 @@ However, when you use a **synchronous (blocking)** operation in an async applica
 
 This library provides true async/await support, enabling:
 
-- **Better Performance**: Handle thousands of concurrent queries efficiently
-- **Lower Resource Usage**: No thread pool overhead
-- **Seamless Integration**: Works naturally with FastAPI, aiohttp, and other async frameworks
-- **Proper Backpressure**: Async operations allow better control over concurrency
+- **Non-blocking Operations**: Prevents your async application from freezing during database queries
+- **Framework Compatibility**: Works naturally with FastAPI, aiohttp, and other async frameworks
+- **Clean Async Code**: Use async/await syntax throughout your application
+- **Better Concurrency Management**: Leverage the event loop for handling concurrent requests
 
 See our [Architecture Overview](docs/architecture.md) for technical details, or learn more about [What This Wrapper Actually Solves (And What It Doesn't)](docs/why-async-wrapper.md#what-this-wrapper-actually-solves-and-what-it-doesnt).
 
@@ -63,8 +63,8 @@ This wrapper makes the cassandra-driver compatible with async Python application
 **What it DOESN'T do**:
 - ❌ Make the underlying I/O truly asynchronous (still uses threads)
 - ❌ Provide performance improvements over the sync driver
-- ❌ Handle thousands of concurrent connections (limited by thread pool)
-- ❌ Remove thread overhead
+- ❌ Remove thread pool limitations (concurrency still bounded by driver's thread pool size)
+- ❌ Eliminate thread overhead
 
 The cassandra-driver uses blocking sockets and thread pools internally. This wrapper provides a compatibility layer but cannot change the fundamental architecture. For a detailed technical analysis, see our [Why Async Wrapper](docs/why-async-wrapper.md#what-this-wrapper-actually-solves-and-what-it-doesnt) documentation.
 
@@ -166,9 +166,11 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## ⚡ Performance
 
-async-cassandra is designed to handle high-concurrency scenarios efficiently by leveraging Python's async/await capabilities and eliminating thread pool bottlenecks. The actual performance improvements will depend on your specific use case, query patterns, and Cassandra cluster configuration.
+async-cassandra enables your async Python application to work with Cassandra without blocking the event loop. While it doesn't eliminate the underlying driver's thread pool, it prevents those blocking operations from freezing your entire application. This is crucial for web servers where a blocked event loop means no requests can be processed.
 
-For performance optimization tips, see our [Performance Guide](docs/performance.md).
+The wrapper's primary benefit is **compatibility**, not raw performance. It allows you to use Cassandra in async applications like FastAPI without sacrificing the responsiveness of your service.
+
+For performance optimization tips and understanding the limitations, see our [Performance Guide](docs/performance.md).
 
 ## 📝 License
 
