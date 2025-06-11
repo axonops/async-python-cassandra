@@ -116,6 +116,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [Connection Pooling Guide](docs/connection-pooling.md) - Understanding Python driver limitations
 - [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
 - [Streaming Large Result Sets](docs/streaming.md) - Efficiently handle large datasets
+- [Retry Policies](docs/retry-policies.md) - Why we have our own retry policy
 - [Metrics and Monitoring](docs/metrics-monitoring.md) - Track performance and health
 - [Architecture Overview](docs/architecture.md) - Technical deep dive
 

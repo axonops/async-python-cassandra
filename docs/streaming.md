@@ -55,8 +55,10 @@ With regular `execute()`, the driver automatically fetches ALL pages into memory
 
 ```python
 # DON'T DO THIS with large tables!
+# (Using async-cassandra's execute method here, but the same problem
+#  exists with the sync driver's execute method)
 result = await session.execute("SELECT * FROM billion_row_table")
-# The driver fetches ALL pages automatically
+# The driver fetches ALL pages automatically behind the scenes
 # This could use gigabytes of memory!
 all_rows = result.all()  # Now you have a billion rows in memory 💥
 ```
@@ -81,9 +83,63 @@ sequenceDiagram
     Note over App: 💥 Out of Memory!
 ```
 
+## Manual Paging with the Driver
+
+The cassandra-driver does provide manual paging control:
+
+```python
+# Using the driver's manual paging (WITHOUT async-cassandra)
+from cassandra.cluster import Cluster
+
+cluster = Cluster(['localhost'])
+session = cluster.connect()
+
+# Set fetch size
+statement = SimpleStatement("SELECT * FROM billion_row_table")
+statement.fetch_size = 1000
+
+# Execute and get first page
+result = session.execute(statement)
+page1 = list(result.current_rows)  # First 1000 rows
+
+# Manually fetch next page
+if result.has_more_pages:
+    result.fetch_next_page()
+    page2 = list(result.current_rows)  # Next 1000 rows
+```
+
+This works, but has limitations:
+1. **Not truly async** - `fetch_next_page()` blocks the event loop
+2. **Complex iteration** - You must manually manage page fetching
+3. **Error-prone** - Easy to accidentally load all pages into memory
+
+### The Async Problem with Manual Paging
+
+Here's what happens when you try manual paging in an async application:
+
+```python
+# ❌ BAD: Blocks the event loop!
+async def process_with_manual_paging():
+    # Even with async-cassandra, manual paging isn't truly async
+    result = await session.execute("SELECT * FROM large_table")
+    
+    while True:
+        # Process current page
+        for row in result.current_rows:
+            await process_row(row)  # Async processing
+        
+        if not result.has_more_pages:
+            break
+            
+        # This BLOCKS the event loop! 😱
+        result.fetch_next_page()  # No async version exists
+```
+
+The `fetch_next_page()` method is synchronous and will block your entire async application!
+
 ## How Streaming Solves This
 
-With `execute_stream()`, you control when pages are fetched:
+With `execute_stream()`, you get automatic async page management:
 
 ```python
 # DO THIS for large tables
