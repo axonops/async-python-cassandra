@@ -162,7 +162,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 🙏 Acknowledgments
 
-- DataStax for the [Python Driver for Apache Cassandra](https://github.com/datastax/python-driver)
+- DataStax™ for the [Python Driver for Apache Cassandra](https://github.com/datastax/python-driver)
 - The Python asyncio community for inspiration and best practices
 - All contributors who help make this project better
 
