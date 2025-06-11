@@ -103,22 +103,6 @@ if __name__ == "__main__":
 
 For more detailed examples, see our [Getting Started Guide](docs/getting-started.md).
 
-## 🧪 Testing
-
-```bash
-# Run unit tests
-pytest tests/unit/
-
-# Run integration tests (requires Cassandra)
-pytest tests/integration/
-
-# Run with coverage
-pytest --cov=async_cassandra tests/
-
-# Run specific test file
-pytest tests/unit/test_session.py
-```
-
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
