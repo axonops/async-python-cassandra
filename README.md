@@ -129,7 +129,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [Retry Policies](docs/retry-policies.md) - Why we have our own retry policy
 - [Metrics and Monitoring](docs/metrics-monitoring.md) - Track performance and health
 - [Architecture Overview](docs/architecture.md) - Technical deep dive
-- [Driver Paging Analysis](docs/driver-paging-analysis.md) - Technical justification for async wrapper
+- [Why Async Wrapper](docs/why-async-wrapper.md) - Technical justification for this library
 
 ### Examples
 - [FastAPI Integration](examples/fastapi_app/README.md) - Complete REST API example
