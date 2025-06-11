@@ -116,7 +116,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-integration-${{ hashFiles('pyproject.toml', 'examples/fastapi_app/requirements.txt') }}
+        key: ${{ runner.os }}-pip-integration-${{ hashFiles('pyproject.toml', 'examples/fastapi_app/requirements-ci.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-integration-
     
@@ -124,7 +124,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[test]"
-        pip install -r examples/fastapi_app/requirements.txt
+        pip install -r examples/fastapi_app/requirements-ci.txt
     
     - name: Wait for Cassandra
       run: |
