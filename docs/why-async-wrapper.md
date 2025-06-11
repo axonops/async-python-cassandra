@@ -382,7 +382,11 @@ Instead of claiming "25x improvement", here's the reality:
 - **Typical case**: Similar throughput to sync driver, better latency distribution
 - **Worst case**: Added overhead from thread-to-event-loop bridging
 
-🎯 The real benefit is **not blocking other operations**, not magically making Cassandra faster. ✅
+### 🎯 The Most Important Point
+
+**The real benefit is not blocking other operations, not magically making Cassandra faster.**
+
+Think of it this way: Without this wrapper, when your app queries Cassandra, it's like a cashier who stops serving all customers while waiting for a price check. With this wrapper, the cashier can help other customers while waiting. The price check doesn't get faster, but the line keeps moving!
 
 ### When Should You Use This?
 
