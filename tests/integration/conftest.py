@@ -34,7 +34,7 @@ def pytest_configure(config):
             pytest.exit(f"Failed to start test containers: {e}", 1)
     else:
         config.containers_started = False
-        print("Using existing Cassandra container")
+        print("Using existing Cassandra service on localhost:9042")
 
 
 def pytest_unconfigure(config):
