@@ -83,3 +83,19 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+## Tests and Examples
+
+For more examples of thread pool configuration:
+
+- **Unit Tests**: [`tests/unit/test_thread_pool_configuration.py`](../tests/unit/test_thread_pool_configuration.py) - Demonstrates configuration options and verifies behavior
+- **Integration Tests**: [`tests/integration/test_thread_pool_configuration.py`](../tests/integration/test_thread_pool_configuration.py) - Shows real-world usage patterns
+- **Example Script**: [`examples/thread_pool_configuration.py`](../examples/thread_pool_configuration.py) - Interactive examples comparing different thread pool sizes
+
+## Official Documentation
+
+For more information about the executor threads configuration in the DataStax Python driver:
+
+- **Cluster Parameters**: [DataStax Python Driver - Cluster Class](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.Cluster)
+- **Execution Profiles**: [DataStax Python Driver - Execution Profiles](https://docs.datastax.com/en/developer/python-driver/3.29/execution_profiles/)
+- **Performance Tuning**: [DataStax Python Driver - Performance](https://docs.datastax.com/en/developer/python-driver/3.29/performance/)
