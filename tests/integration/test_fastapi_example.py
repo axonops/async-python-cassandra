@@ -2,17 +2,15 @@
 Integration tests for FastAPI example application.
 """
 
+import asyncio
+import sys
 import uuid
+from pathlib import Path
+from typing import AsyncGenerator
+
 import pytest
 import pytest_asyncio
-import asyncio
-from typing import AsyncGenerator
 from httpx import AsyncClient
-
-from fastapi.testclient import TestClient
-
-import sys
-from pathlib import Path
 
 # Add the FastAPI app directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "examples" / "fastapi_app"))
@@ -26,7 +24,7 @@ def cassandra_service():
     # Check if it's available
     import socket
     import time
-    
+
     max_attempts = 10
     for i in range(max_attempts):
         try:
@@ -37,19 +35,18 @@ def cassandra_service():
             if result == 0:
                 yield True
                 return
-        except:
+        except Exception:
             pass
         time.sleep(1)
-    
+
     raise RuntimeError("Cassandra is not available on localhost:9042")
 
 
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     """Create async HTTP client for tests."""
-    from httpx import AsyncClient, ASGITransport
-    from main import app
-    
+    from httpx import ASGITransport, AsyncClient
+
     # Initialize the app lifespan context
     async with app.router.lifespan_context(app):
         # Use ASGI transport to test the app directly
@@ -74,7 +71,7 @@ class TestHealthEndpoint:
         assert "timestamp" in data
 
 
-@pytest.mark.integration  
+@pytest.mark.integration
 class TestUserCRUD:
     """Test user CRUD operations."""
 
