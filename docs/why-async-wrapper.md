@@ -17,7 +17,7 @@ This document provides a comprehensive technical analysis of why the async-cassa
 
 ## Executive Summary
 
-While the cassandra-driver provides `execute_async()` for non-blocking query execution, it was designed before Python's async/await became standard. This creates several fundamental incompatibilities with modern async Python applications that go beyond just the paging issue.
+While the cassandra-driver provides `execute_async()` for non-blocking query execution, it was designed before Python's async/await became standard. This creates several fundamental incompatibilities with modern async Python applications.
 
 ## 1. The Synchronous Paging Problem
 
@@ -37,9 +37,9 @@ while result.has_more_pages:
 - JIRA [PYTHON-1261](https://datastax-oss.atlassian.net/browse/PYTHON-1261) tracks this limitation
 
 ### Impact
-- Blocks event loop for 10-100ms per page fetch
+- Blocks event loop for the duration of network round-trip to Cassandra
 - Prevents processing other requests during this time
-- Can cause 25x performance degradation
+- Performance impact depends on latency and query patterns
 
 ## 2. Thread Pool Bottlenecks
 
@@ -54,7 +54,7 @@ self.executor = ThreadPoolExecutor(max_workers=executor_threads)
 ### Problems with Thread Pools in Async Apps
 
 1. **Thread Pool Exhaustion**
-   - Default pool size: 2-4 threads
+   - Default pool size from driver source: `min(2, get_cpu_count() // 2)` ([cluster.py line 1048](https://github.com/datastax/python-driver/blob/3.29.2/cassandra/cluster.py#L1048))
    - Each blocking operation consumes a thread
    - High concurrency quickly exhausts the pool
 
@@ -201,12 +201,14 @@ except QueryError as e:
 
 ### Connection Lifecycle Issues
 
-1. **No Async Shutdown**
+1. **Synchronous Shutdown**
    ```python
-   # cassandra-driver
-   cluster.shutdown()  # Blocks event loop
-   session.shutdown()  # Also blocks
+   # cassandra-driver - shutdown methods are synchronous
+   cluster.shutdown()  # Synchronous method
+   session.shutdown()  # Synchronous method
    ```
+   
+   See [Cluster.shutdown() API](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.Cluster.shutdown)
 
 2. **No Graceful Async Cleanup**
    - Can't await pending operations
@@ -215,39 +217,43 @@ except QueryError as e:
 
 ### Statement Preparation
 ```python
-# cassandra-driver - synchronous only
-prepared = session.prepare(query)  # Blocks!
+# cassandra-driver - prepare() is synchronous
+prepared = session.prepare(query)  # Synchronous call
 
-# async-cassandra
+# async-cassandra provides async version
 prepared = await session.prepare(query)  # Non-blocking
 ```
 
+The synchronous `prepare()` method is documented in the [Session API](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.Session.prepare)
+
 ## 8. Performance Implications
 
-### Benchmarks Show
+### Performance Considerations
 
 1. **Thread Pool Overhead**
-   - Each query requires thread allocation
-   - Context switching costs
-   - GIL contention
+   - Each query requires thread allocation from limited pool
+   - Context switching between threads has OS overhead
+   - Python's GIL prevents true parallelism
 
 2. **Memory Usage**
-   - Threads use more memory than coroutines
-   - ~2MB per thread vs ~2KB per coroutine
-   - Significant at scale
+   - Each thread requires its own stack space
+   - Coroutines share the same stack
+   - Memory difference becomes significant with many concurrent operations
 
-3. **Latency**
-   - Thread scheduling adds latency
-   - Callback indirection adds overhead
-   - No zero-copy optimizations
+3. **Scheduling Overhead**
+   - Thread scheduling is handled by the OS
+   - Coroutine scheduling is handled by Python's event loop
+   - Event loop scheduling is more efficient for I/O-bound operations
 
 ### Real-World Impact
 
-From community benchmarks and discussions:
-- **Sync driver with threads**: ~300 queries/second
-- **Async wrapper**: ~7,500 queries/second  
-- **25x improvement** for high-concurrency workloads
-- See [FastAPI + Cassandra Performance Discussion](https://github.com/tiangolo/fastapi/discussions/2914)
+Performance improvements vary based on:
+- Workload characteristics (query complexity, result size)
+- Network latency to Cassandra cluster
+- Concurrency level of the application
+- Hardware resources available
+
+The async approach shows the most benefit in high-concurrency scenarios where the thread pool becomes a bottleneck.
 
 ## Additional Benefits of async-cassandra
 
@@ -279,9 +285,9 @@ The async-cassandra wrapper is necessary because:
 
 1. **Fundamental Design Mismatch**: The cassandra-driver was designed before async/await became standard in Python. It uses threads, callbacks, and its own event loop - patterns that don't integrate well with modern async Python.
 
-2. **Multiple Blocking Operations**: Not just paging - prepare statements, shutdown, keyspace operations all block the event loop.
+2. **Multiple Blocking Operations**: Not just paging - `prepare()`, `shutdown()`, and `set_keyspace()` are all synchronous methods as documented in the [Session API](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.Session).
 
-3. **Performance Critical**: In high-concurrency scenarios, the thread pool becomes a severe bottleneck, limiting scalability.
+3. **Thread Pool Limitations**: The default thread pool size of 2-4 threads can become a bottleneck in high-concurrency scenarios.
 
 4. **Developer Experience**: Callbacks and futures are harder to work with than async/await. The wrapper provides a modern, Pythonic API.
 
