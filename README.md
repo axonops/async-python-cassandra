@@ -52,14 +52,14 @@ This is critical for web applications where blocking the event loop means all ot
 
 ## 🚀 Key Features
 
-- ✅ True async/await support for Cassandra operations
-- ✅ Optimized for the Python driver's connection model
-- ✅ Automatic retries with configurable policies
-- ✅ Support for prepared statements and batch operations
-- ✅ Type hints and full typing support
-- ✅ Compatible with FastAPI, aiohttp, and other async frameworks
-- ✅ Comprehensive test coverage including integration tests
-- ✅ Performance optimized for high-concurrency scenarios
+- **Async/await interface** for all Cassandra operations
+- **Streaming support** for memory-efficient processing of large result sets
+- **Automatic retry logic** for SELECT queries, with idempotency checking for writes
+- **Connection monitoring** and health checking capabilities
+- **Metrics collection** with pluggable backends (in-memory, Prometheus)
+- **Type hints** throughout the codebase
+- **Compatible** with standard cassandra-driver types (Statement, PreparedStatement, etc.)
+- **Context manager support** for proper resource cleanup
 
 
 ## 📋 Requirements
