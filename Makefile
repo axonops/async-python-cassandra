@@ -34,9 +34,9 @@ test-integration:
 	docker-compose -f tests/integration/docker-compose.yml down
 
 lint:
+	ruff check src/ tests/
 	black --check src/ tests/
 	isort --check-only src/ tests/
-	flake8 src/ tests/
 	mypy src/
 
 format:

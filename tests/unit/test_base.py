@@ -145,30 +145,30 @@ class TestExceptionHandler:
     async def test_multiple_reraise_exceptions(self):
         """Test handler with multiple passthrough exceptions."""
 
-        class Error1(Exception):
+        class Error1Error(Exception):
             pass
 
-        class Error2(Exception):
+        class Error2Error(Exception):
             pass
 
         # Test first exception type
-        with pytest.raises(Error1):
+        with pytest.raises(Error1Error):
             async with ExceptionHandler(
-                "Operation", AsyncCassandraError, reraise_exceptions=(Error1, Error2)
+                "Operation", AsyncCassandraError, reraise_exceptions=(Error1Error, Error2Error)
             ):
-                raise Error1("Error 1")
+                raise Error1Error("Error 1")
 
         # Test second exception type
-        with pytest.raises(Error2):
+        with pytest.raises(Error2Error):
             async with ExceptionHandler(
-                "Operation", AsyncCassandraError, reraise_exceptions=(Error1, Error2)
+                "Operation", AsyncCassandraError, reraise_exceptions=(Error1Error, Error2Error)
             ):
-                raise Error2("Error 2")
+                raise Error2Error("Error 2")
 
         # Test non-passthrough exception
         with pytest.raises(AsyncCassandraError):
             async with ExceptionHandler(
-                "Operation", AsyncCassandraError, reraise_exceptions=(Error1, Error2)
+                "Operation", AsyncCassandraError, reraise_exceptions=(Error1Error, Error2Error)
             ):
                 raise ValueError("Should be wrapped")
 

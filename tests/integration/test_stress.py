@@ -155,7 +155,7 @@ class TestStressScenarios:
 
         select_stmt = await stress_session.prepare(
             """
-            SELECT * FROM high_volume WHERE partition_key = ? 
+            SELECT * FROM high_volume WHERE partition_key = ?
             ORDER BY clustering_key DESC LIMIT 10
         """
         )
@@ -334,7 +334,7 @@ class TestStressScenarios:
 
         select_range_stmt = await stress_session.prepare(
             """
-            SELECT * FROM wide_rows WHERE partition_key = ? 
+            SELECT * FROM wide_rows WHERE partition_key = ?
             AND column_id >= ? AND column_id < ?
         """
         )

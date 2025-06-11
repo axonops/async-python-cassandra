@@ -34,7 +34,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install ruff black isort mypy
+        pip install ruff black isort mypy types-setuptools
     
     - name: Run ruff
       run: ruff check src tests
@@ -79,6 +79,7 @@ jobs:
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
+      if: github.event_name == 'push'
       with:
         file: ./coverage.xml
         fail_ci_if_error: false
@@ -89,9 +90,12 @@ jobs:
   integration-test:
     name: Integration Tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cassandra-version: ["5.0"]
     services:
       cassandra:
-        image: cassandra:4.1
+        image: cassandra:${{ matrix.cassandra-version }}
         ports:
           - 9042:9042
         options: >-
@@ -147,9 +151,10 @@ jobs:
         CASSANDRA_HOST: localhost
         CASSANDRA_PORT: 9042
 
-  docs:
-    name: Documentation
+  build:
+    name: Build Distribution
     runs-on: ubuntu-latest
+    needs: [lint, test]
     steps:
     - uses: actions/checkout@v4
     
@@ -158,43 +163,37 @@ jobs:
       with:
         python-version: '3.12'
     
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[docs]" || pip install -e .
-        pip install sphinx sphinx-rtd-theme
+        pip install build twine
     
-    - name: Check documentation
-      run: |
-        # Add doc building when docs are set up
-        echo "Documentation check placeholder"
+    - name: Build distribution
+      run: python -m build
     
+    - name: Check distribution
+      run: twine check dist/*
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'  # Only run on push, not on every PR
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-    
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-results.sarif'
     
     - name: Run bandit security linter
       run: |
         pip install bandit[toml]
-        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ -ll -i -x tests
     
-    - name: Upload bandit results
-      uses: actions/upload-artifact@v4
-      with:
-        name: bandit-report
-        path: bandit-report.json
+    - name: Run safety check
+      run: |
+        pip install safety
+        pip install -e .
+        safety check --json --continue-on-error
