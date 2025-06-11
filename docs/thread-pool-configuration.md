@@ -87,17 +87,43 @@ cluster = AsyncCluster(
 
 ### Memory Usage
 
-Each thread consumes memory for:
-- Thread stack: ~1MB (configurable via `ulimit -s`)
-- Thread-local storage: ~512KB-1MB
-- Total per thread: ~1.5-2MB
+Each thread consumes approximately 1.5-2MB of memory. This can be measured empirically:
 
-**Example memory calculation:**
 ```python
-# 16 threads = ~32MB additional memory
-# 50 threads = ~100MB additional memory
-# 100 threads = ~200MB additional memory
+import os
+import psutil
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+# Measure thread pool memory overhead
+process = psutil.Process(os.getpid())
+baseline_mb = process.memory_info().rss / 1024 / 1024
+
+# Create executor with specific thread count
+executor = ThreadPoolExecutor(max_workers=20)
+
+# Submit enough tasks to force all threads to be created
+futures = []
+for i in range(20):
+    futures.append(executor.submit(time.sleep, 10))
+
+time.sleep(1)  # Let threads initialize
+
+current_mb = process.memory_info().rss / 1024 / 1024
+thread_overhead_mb = current_mb - baseline_mb
+
+print(f"Total overhead for 20 threads: {thread_overhead_mb:.1f} MB")
+print(f"Per thread: {thread_overhead_mb/20:.1f} MB")
+
+# Cleanup
+executor.shutdown(wait=False)
 ```
+
+**Typical memory usage:**
+- 16 threads ≈ 24-32MB additional memory
+- 50 threads ≈ 75-100MB additional memory  
+- 100 threads ≈ 150-200MB additional memory
 
 ### CPU Overhead
 
