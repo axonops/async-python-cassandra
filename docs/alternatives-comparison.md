@@ -39,9 +39,9 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 - Supports Cassandra, ScyllaDB, and AWS Keyspaces
 
 **Technical Approach:**
-- Uses Rust's async I/O primitives
-- PyO3 bindings for Python integration
-- Native protocol implementation
+- Implements Cassandra protocol directly in Rust
+- Uses Rust's tokio async runtime for I/O
+- PyO3 bindings expose Rust functionality to Python
 
 ### 3. Acsylla
 
@@ -83,11 +83,11 @@ The Python ecosystem offers several approaches to async Cassandra connectivity. 
 
 | Aspect | async-python-cassandra | ScyllaPy | Acsylla | DataStax AsyncioReactor |
 |--------|------------------------|----------|---------|-------------------------|
-| I/O Model | Thread pool | Native async | Native async | Thread pool |
+| I/O Model | Thread pool | Rust async (tokio) | C++ async (libuv) | Thread pool |
 | Language Core | Python | Rust | C++ | Python |
 | Binary Dependencies | None | Optional* | Required | None |
 | Platform Support | All Python platforms | Windows/Linux/macOS | Linux/macOS | All Python platforms |
-| Protocol Implementation | Via cassandra-driver | Native | Via cpp-driver | Via cassandra-driver |
+| Protocol Implementation | Wraps cassandra-driver | Direct in Rust | Wraps cpp-driver | Wraps cassandra-driver |
 
 *Pre-built wheels available for common platforms
 
