@@ -79,6 +79,15 @@ The cassandra-driver uses blocking sockets and thread pools internally. This wra
 - **Compatible** with standard cassandra-driver types (Statement, PreparedStatement, etc.)
 - **Context manager support** for proper resource cleanup
 
+## 🔀 Alternative Libraries
+
+Several other async Cassandra drivers exist for Python:
+
+- **[ScyllaPy](https://github.com/Intreecom/scyllapy)**: Rust-based driver with Python bindings offering native async I/O
+- **[Acsylla](https://github.com/acsylla/acsylla)**: C++ driver wrapper with true async capabilities and ScyllaDB optimizations
+
+See our [detailed comparison guide](docs/alternatives-comparison.md) to understand the trade-offs and choose the best solution for your use case.
+
 
 ## 📋 Requirements
 
@@ -148,6 +157,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [Metrics and Monitoring](docs/metrics-monitoring.md) - Track performance and health
 - [Architecture Overview](docs/architecture.md) - Technical deep dive
 - [Why Async Wrapper](docs/why-async-wrapper.md) - Technical justification for this library
+- [Alternatives Comparison](docs/alternatives-comparison.md) - Comparison with other async drivers
 
 ### Examples
 - [FastAPI Integration](examples/fastapi_app/README.md) - Complete REST API example
