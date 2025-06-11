@@ -17,7 +17,7 @@ from cassandra.policies import (
     TokenAwarePolicy,
 )
 
-from .base import AsyncCloseable, AsyncContextManageable, check_not_closed
+from .base import AsyncCloseable, AsyncContextManageable
 from .exceptions import ConnectionError
 from .retry_policy import AsyncRetryPolicy
 from .session import AsyncCassandraSession
@@ -133,7 +133,6 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
 
         return cls(contact_points=contact_points, auth_provider=auth_provider, **kwargs)  # type: ignore[arg-type]
 
-    @check_not_closed
     async def connect(self, keyspace: Optional[str] = None) -> AsyncCassandraSession:
         """
         Connect to the cluster and create a session.
@@ -147,12 +146,15 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
         Raises:
             ConnectionError: If connection fails.
         """
+        if self.is_closed:
+            raise ConnectionError("Cluster is closed")
+
         try:
             session = await AsyncCassandraSession.create(self._cluster, keyspace)
             return session
 
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to cluster: {str(e)}", cause=e)
+            raise ConnectionError(f"Failed to connect to cluster: {str(e)}") from e
 
     async def _do_close(self) -> None:
         """Perform the actual cluster shutdown."""

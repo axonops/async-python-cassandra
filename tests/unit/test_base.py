@@ -4,229 +4,129 @@ Unit tests for base module decorators and utilities.
 
 import pytest
 
-from async_cassandra.base import ExceptionHandler, check_not_closed
-from async_cassandra.exceptions import AsyncCassandraError, ConnectionError
+from async_cassandra.base import AsyncCloseable, AsyncContextManageable
+from async_cassandra.exceptions import ConnectionError
 
 
-class MockSession:
-    """Mock session for testing decorators."""
-
-    def __init__(self, is_closed=False):
-        self._closed = is_closed
-        self.call_count = 0
-
-    @property
-    def is_closed(self):
-        return self._closed
-
-    def _check_not_closed(self):
-        if self._closed:
-            raise ConnectionError("Session is closed")
-
-    @check_not_closed
-    async def async_method(self, arg1, arg2=None):
-        """Async method with decorator."""
-        self.call_count += 1
-        return f"async_result: {arg1}, {arg2}"
-
-    @check_not_closed
-    async def another_async_method(self, arg1):
-        """Another async method with decorator."""
-        self.call_count += 1
-        return f"another_async_result: {arg1}"
-
-
-class TestCheckNotClosedDecorator:
-    """Test check_not_closed decorator."""
+class TestAsyncCloseable:
+    """Test AsyncCloseable base class."""
 
     @pytest.mark.asyncio
-    async def test_async_method_when_open(self):
-        """Test decorator allows async method when session is open."""
-        session = MockSession(is_closed=False)
-        result = await session.async_method("test", arg2="value")
+    async def test_close_idempotent(self):
+        """Test that close can be called multiple times safely."""
 
-        assert result == "async_result: test, value"
-        assert session.call_count == 1
+        class TestResource(AsyncCloseable):
+            close_count = 0
 
-    @pytest.mark.asyncio
-    async def test_async_method_when_closed(self):
-        """Test decorator raises error for async method when session is closed."""
-        session = MockSession(is_closed=True)
+            async def _do_close(self):
+                self.close_count += 1
 
-        with pytest.raises(ConnectionError) as exc_info:
-            await session.async_method("test")
+        resource = TestResource()
+        assert not resource.is_closed
 
-        assert str(exc_info.value) == "Session is closed"
-        assert session.call_count == 0  # Method should not be called
+        # First close
+        await resource.close()
+        assert resource.is_closed
+        assert resource.close_count == 1
 
-    @pytest.mark.asyncio
-    async def test_another_async_method_when_open(self):
-        """Test decorator allows another async method when session is open."""
-        session = MockSession(is_closed=False)
-        result = await session.another_async_method("test")
-
-        assert result == "another_async_result: test"
-        assert session.call_count == 1
+        # Second close should not call _do_close again
+        await resource.close()
+        assert resource.is_closed
+        assert resource.close_count == 1
 
     @pytest.mark.asyncio
-    async def test_another_async_method_when_closed(self):
-        """Test decorator raises error for another async method when session is closed."""
-        session = MockSession(is_closed=True)
+    async def test_concurrent_close(self):
+        """Test that concurrent close calls are handled properly."""
+        import asyncio
 
-        with pytest.raises(ConnectionError) as exc_info:
-            await session.another_async_method("test")
+        class TestResource(AsyncCloseable):
+            close_count = 0
 
-        assert str(exc_info.value) == "Session is closed"
-        assert session.call_count == 0
+            async def _do_close(self):
+                await asyncio.sleep(0.1)  # Simulate slow close
+                self.close_count += 1
 
-    def test_decorator_preserves_function_metadata(self):
-        """Test decorator preserves function name and docstring."""
-        session = MockSession()
+        resource = TestResource()
 
-        assert session.async_method.__name__ == "async_method"
-        assert session.async_method.__doc__ == "Async method with decorator."
-        assert session.another_async_method.__name__ == "another_async_method"
-        assert session.another_async_method.__doc__ == "Another async method with decorator."
+        # Call close concurrently
+        await asyncio.gather(
+            resource.close(),
+            resource.close(),
+            resource.close(),
+        )
+
+        # Should only close once
+        assert resource.is_closed
+        assert resource.close_count == 1
 
     @pytest.mark.asyncio
-    async def test_decorator_with_no_check_method(self):
-        """Test decorator handles objects without _check_not_closed method."""
+    async def test_check_not_closed(self):
+        """Test _check_not_closed method."""
 
-        class NoCheckObject:
-            @check_not_closed
-            async def method(self):
+        class TestResource(AsyncCloseable):
+            async def _do_close(self):
+                pass
+
+            def use_resource(self):
+                self._check_not_closed()
                 return "success"
 
-        obj = NoCheckObject()
-        # Should work without _check_not_closed method
-        result = await obj.method()
-        assert result == "success"
+        resource = TestResource()
+
+        # Should work when not closed
+        assert resource.use_resource() == "success"
+
+        # Close the resource
+        await resource.close()
+
+        # Should raise when closed
+        with pytest.raises(ConnectionError) as exc_info:
+            resource.use_resource()
+
+        assert "TestResource is closed" in str(exc_info.value)
 
 
-class TestExceptionHandler:
-    """Test ExceptionHandler context manager."""
-
-    @pytest.mark.asyncio
-    async def test_no_exception(self):
-        """Test handler when no exception is raised."""
-        async with ExceptionHandler("Test operation", AsyncCassandraError):
-            result = 1 + 1
-
-        assert result == 2  # Normal execution
-
-    @pytest.mark.asyncio
-    async def test_wrap_exception(self):
-        """Test handler wraps exceptions."""
-        with pytest.raises(AsyncCassandraError) as exc_info:
-            async with ExceptionHandler("Test operation failed", AsyncCassandraError):
-                raise ValueError("Original error")
-
-        assert str(exc_info.value) == "Test operation failed: Original error"
-        assert isinstance(exc_info.value.__cause__, ValueError)
+class TestAsyncContextManageable:
+    """Test AsyncContextManageable mixin."""
 
     @pytest.mark.asyncio
-    async def test_reraise_exceptions(self):
-        """Test handler passes through specified exceptions."""
+    async def test_context_manager(self):
+        """Test async context manager functionality."""
 
-        class CustomError(Exception):
-            pass
+        class TestResource(AsyncCloseable, AsyncContextManageable):
+            close_count = 0
 
-        with pytest.raises(CustomError) as exc_info:
-            async with ExceptionHandler(
-                "Test operation", AsyncCassandraError, reraise_exceptions=(CustomError,)
-            ):
-                raise CustomError("Should not be wrapped")
+            async def _do_close(self):
+                self.close_count += 1
 
-        # Original exception should be raised, not wrapped
-        assert type(exc_info.value) is CustomError
-        assert str(exc_info.value) == "Should not be wrapped"
+        # Use as context manager
+        async with TestResource() as resource:
+            assert not resource.is_closed
+            assert resource.close_count == 0
 
-    @pytest.mark.asyncio
-    async def test_multiple_reraise_exceptions(self):
-        """Test handler with multiple passthrough exceptions."""
-
-        class Error1Error(Exception):
-            pass
-
-        class Error2Error(Exception):
-            pass
-
-        # Test first exception type
-        with pytest.raises(Error1Error):
-            async with ExceptionHandler(
-                "Operation", AsyncCassandraError, reraise_exceptions=(Error1Error, Error2Error)
-            ):
-                raise Error1Error("Error 1")
-
-        # Test second exception type
-        with pytest.raises(Error2Error):
-            async with ExceptionHandler(
-                "Operation", AsyncCassandraError, reraise_exceptions=(Error1Error, Error2Error)
-            ):
-                raise Error2Error("Error 2")
-
-        # Test non-passthrough exception
-        with pytest.raises(AsyncCassandraError):
-            async with ExceptionHandler(
-                "Operation", AsyncCassandraError, reraise_exceptions=(Error1Error, Error2Error)
-            ):
-                raise ValueError("Should be wrapped")
+        # Should be closed after exiting context
+        assert resource.is_closed
+        assert resource.close_count == 1
 
     @pytest.mark.asyncio
-    async def test_sync_context_manager(self):
-        """Test ExceptionHandler works as sync context manager too."""
-        with pytest.raises(AsyncCassandraError):
-            with ExceptionHandler("Sync operation failed", AsyncCassandraError):
-                raise RuntimeError("Sync error")
+    async def test_context_manager_with_exception(self):
+        """Test context manager closes resource on exception."""
 
-    @pytest.mark.asyncio
-    async def test_exception_handler_with_empty_message(self):
-        """Test handler with empty error message."""
-        with pytest.raises(AsyncCassandraError) as exc_info:
-            async with ExceptionHandler("", AsyncCassandraError):
-                raise ValueError("Error")
+        class TestResource(AsyncCloseable, AsyncContextManageable):
+            close_count = 0
 
-        assert str(exc_info.value) == ": Error"
+            async def _do_close(self):
+                self.close_count += 1
 
-    @pytest.mark.asyncio
-    async def test_exception_handler_preserves_traceback(self):
-        """Test handler preserves original exception traceback."""
+        resource = None
         try:
-            async with ExceptionHandler("Operation failed", AsyncCassandraError):
-                raise ValueError("Original error")
-        except AsyncCassandraError as e:
-            import traceback
-
-            # Check that the cause is properly chained
-            assert e.__cause__ is not None
-            assert isinstance(e.__cause__, ValueError)
-            assert str(e.__cause__) == "Original error"
-
-            # Check that original traceback is preserved in __cause__
-            cause_tb_str = "".join(
-                traceback.format_exception(
-                    type(e.__cause__), e.__cause__, e.__cause__.__traceback__
-                )
-            )
-            assert "raise ValueError" in cause_tb_str
-            assert "test_exception_handler_preserves_traceback" in cause_tb_str
-
-    @pytest.mark.asyncio
-    async def test_nested_exception_handlers(self):
-        """Test nested ExceptionHandler usage."""
-
-        class OuterError(Exception):
+            async with TestResource() as res:
+                resource = res
+                raise ValueError("Test error")
+        except ValueError:
             pass
 
-        class InnerError(Exception):
-            pass
-
-        with pytest.raises(OuterError) as exc_info:
-            async with ExceptionHandler("Outer operation", OuterError):
-                async with ExceptionHandler("Inner operation", InnerError):
-                    raise ValueError("Deep error")
-
-        # Should be wrapped by inner handler first, then outer
-        assert isinstance(exc_info.value, OuterError)
-        assert isinstance(exc_info.value.__cause__, InnerError)
-        assert isinstance(exc_info.value.__cause__.__cause__, ValueError)
+        # Should still close resource on exception
+        assert resource is not None
+        assert resource.is_closed
+        assert resource.close_count == 1

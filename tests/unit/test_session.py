@@ -108,7 +108,7 @@ class TestAsyncCassandraSession:
             await async_session.execute("SELECT * FROM users")
 
         assert "Query execution failed" in str(exc_info.value)
-        assert exc_info.value.cause is not None
+        assert exc_info.value.__cause__ is not None
 
     @pytest.mark.asyncio
     async def test_execute_on_closed_session(self, async_session):

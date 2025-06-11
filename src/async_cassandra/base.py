@@ -7,7 +7,7 @@ across the library.
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Literal, Optional, Protocol, Tuple, Type, TypeVar
+from typing import Any, TypeVar
 
 from .exceptions import ConnectionError
 
@@ -74,112 +74,6 @@ class AsyncContextManageable:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
-    ) -> None:
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
-        if hasattr(self, "close"):
-            await self.close()
-        elif hasattr(self, "shutdown"):
-            await self.shutdown()
-        else:
-            raise NotImplementedError(
-                f"{self.__class__.__name__} must implement close() or shutdown()"
-            )
-
-
-class CloseableProtocol(Protocol):
-    """Protocol for objects that can be closed."""
-
-    async def close(self) -> None:
-        """Close the resource."""
-        ...
-
-
-def check_not_closed(method: Callable) -> Callable:
-    """
-    Decorator to check if a resource is closed before executing a method.
-
-    The decorated class must have a _check_not_closed() method.
-    """
-
-    async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-        if hasattr(self, "_check_not_closed"):
-            self._check_not_closed()
-        return await method(self, *args, **kwargs)
-
-    # Preserve function metadata
-    wrapper.__name__ = method.__name__
-    wrapper.__doc__ = method.__doc__
-    wrapper.__annotations__ = method.__annotations__
-
-    return wrapper
-
-
-class ExceptionHandler:
-    """
-    Context manager for consistent exception handling.
-
-    Usage:
-        async with ExceptionHandler("Operation failed", QueryError):
-            # Code that might raise exceptions
-            pass
-    """
-
-    def __init__(
-        self,
-        error_message: str,
-        wrapper_exception: Type[Exception],
-        reraise_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
-    ):
-        """
-        Initialize the exception handler.
-
-        Args:
-            error_message: Message to include in wrapped exceptions
-            wrapper_exception: Exception class to wrap unexpected errors
-            reraise_exceptions: Tuple of exceptions to reraise without wrapping
-        """
-        self.error_message = error_message
-        self.wrapper_exception = wrapper_exception
-        self.reraise_exceptions = reraise_exceptions or ()
-
-    def __enter__(self) -> "ExceptionHandler":
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
-    ) -> Literal[False]:
-        if exc_type is None:
-            return False
-
-        # Reraise specific exceptions as-is
-        if isinstance(exc_val, self.reraise_exceptions):
-            return False
-
-        # Wrap other exceptions
-        if not isinstance(exc_val, self.wrapper_exception):
-            wrapped = self.wrapper_exception(f"{self.error_message}: {str(exc_val)}")
-            # Always properly chain the exception
-            wrapped.__cause__ = exc_val
-            raise wrapped
-
-        return False
-
-    async def __aenter__(self) -> "ExceptionHandler":
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
-    ) -> Literal[False]:
-        # Reuse sync implementation
-        return self.__exit__(exc_type, exc_val, exc_tb)
+        await self.close()  # type: ignore

@@ -22,10 +22,12 @@ from .metrics import (
     create_metrics_system,
 )
 from .monitoring import (
+    HOST_STATUS_DOWN,
+    HOST_STATUS_UNKNOWN,
+    HOST_STATUS_UP,
     ClusterMetrics,
     ConnectionMonitor,
     HostMetrics,
-    HostStatus,
     RateLimitedSession,
     create_monitored_session,
 )
@@ -45,7 +47,9 @@ __all__ = [
     "ConnectionMonitor",
     "RateLimitedSession",
     "create_monitored_session",
-    "HostStatus",
+    "HOST_STATUS_UP",
+    "HOST_STATUS_DOWN",
+    "HOST_STATUS_UNKNOWN",
     "HostMetrics",
     "ClusterMetrics",
     "AsyncStreamingResultSet",

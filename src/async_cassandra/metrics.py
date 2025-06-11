@@ -10,15 +10,10 @@ This module provides comprehensive monitoring capabilities including:
 
 import asyncio
 import logging
-import time
-from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
-
-if TYPE_CHECKING:
-    from prometheus_client import Counter, Gauge, Histogram
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +26,7 @@ class QueryMetrics:
     duration: float
     success: bool
     error_type: Optional[str] = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     parameters_count: int = 0
     result_size: int = 0
 
@@ -48,23 +43,20 @@ class ConnectionMetrics:
     total_queries: int = 0
 
 
-class MetricsCollector(ABC):
-    """Abstract base class for metrics collection backends."""
+class MetricsCollector:
+    """Base class for metrics collection backends."""
 
-    @abstractmethod
     async def record_query(self, metrics: QueryMetrics) -> None:
         """Record query execution metrics."""
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     async def record_connection_health(self, metrics: ConnectionMetrics) -> None:
         """Record connection health metrics."""
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     async def get_stats(self) -> Dict[str, Any]:
         """Get aggregated statistics."""
-        pass
+        raise NotImplementedError
 
 
 class InMemoryMetricsCollector(MetricsCollector):
@@ -102,7 +94,7 @@ class InMemoryMetricsCollector(MetricsCollector):
             recent_queries = [
                 q
                 for q in self.query_metrics
-                if q.timestamp > datetime.utcnow() - timedelta(minutes=5)
+                if q.timestamp > datetime.now(timezone.utc) - timedelta(minutes=5)
             ]
 
             if recent_queries:
@@ -147,13 +139,13 @@ class InMemoryMetricsCollector(MetricsCollector):
 class PrometheusMetricsCollector(MetricsCollector):
     """Prometheus metrics collector for production monitoring."""
 
-    query_duration: Optional["Histogram"]
-    query_total: Optional["Counter"]
-    connection_health: Optional["Gauge"]
-    error_total: Optional["Counter"]
-    _available: bool
-
     def __init__(self) -> None:
+        self._available = False
+        self.query_duration = None
+        self.query_total = None
+        self.connection_health = None
+        self.error_total = None
+
         try:
             from prometheus_client import Counter, Gauge, Histogram
 
@@ -176,7 +168,6 @@ class PrometheusMetricsCollector(MetricsCollector):
             self._available = True
         except ImportError:
             logger.warning("prometheus_client not available, metrics disabled")
-            self._available = False
 
     async def record_query(self, metrics: QueryMetrics) -> None:
         """Record query execution metrics to Prometheus."""
@@ -275,7 +266,7 @@ class MetricsMiddleware:
         metrics = ConnectionMetrics(
             host=host,
             is_healthy=is_healthy,
-            last_check=datetime.utcnow(),
+            last_check=datetime.now(timezone.utc),
             response_time=response_time,
             error_count=error_count,
             total_queries=total_queries,
@@ -302,36 +293,6 @@ class MetricsMiddleware:
 
         # Create a hash for storage efficiency
         return hashlib.md5(normalized.encode()).hexdigest()[:12]
-
-
-# Decorators for easy metrics integration
-def with_metrics(middleware: MetricsMiddleware) -> Callable:
-    """Decorator to add metrics to async functions."""
-
-    def decorator(func: Callable) -> Callable:
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            start_time = time.perf_counter()
-            success = False
-            error_type = None
-
-            try:
-                result = await func(*args, **kwargs)
-                success = True
-                return result
-            except Exception as e:
-                error_type = type(e).__name__
-                raise
-            finally:
-                duration = time.perf_counter() - start_time
-                query = kwargs.get("query", str(args[1]) if len(args) > 1 else "unknown")
-
-                await middleware.record_query_metrics(
-                    query=query, duration=duration, success=success, error_type=error_type
-                )
-
-        return wrapper
-
-    return decorator
 
 
 # Factory function for easy setup

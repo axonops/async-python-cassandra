@@ -4,24 +4,17 @@ Async session management for Cassandra connections.
 
 import asyncio
 import time
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 from cassandra import InvalidRequest, OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
-from cassandra.cluster import (
-    _NOT_SET,
-    EXEC_PROFILE_DEFAULT,
-    Cluster,
-    ExecutionProfile,
-    Host,
-    Session,
-)
+from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Cluster, Session
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
-from .base import AsyncCloseable, AsyncContextManageable, ExceptionHandler, check_not_closed
-from .exceptions import QueryError
+from .base import AsyncCloseable, AsyncContextManageable
+from .exceptions import ConnectionError, QueryError
 from .metrics import MetricsMiddleware
 from .result import AsyncResultHandler, AsyncResultSet
-from .streaming import AsyncStreamingResultSet, StreamConfig, StreamingResultHandler
+from .streaming import AsyncStreamingResultSet, StreamingResultHandler
 
 
 class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
@@ -68,15 +61,15 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
 
     async def execute(
         self,
-        query: Union[str, SimpleStatement, PreparedStatement],
-        parameters: Optional[Union[List, Dict]] = None,
+        query: Any,
+        parameters: Any = None,
         trace: bool = False,
-        custom_payload: Optional[Dict[str, bytes]] = None,
-        timeout: Union[float, object] = _NOT_SET,
-        execution_profile: Union[str, ExecutionProfile] = EXEC_PROFILE_DEFAULT,
-        paging_state: Optional[bytes] = None,
-        host: Optional[Host] = None,
-        execute_as: Optional[str] = None,
+        custom_payload: Any = None,
+        timeout: Any = None,
+        execution_profile: Any = EXEC_PROFILE_DEFAULT,
+        paging_state: Any = None,
+        host: Any = None,
+        execute_as: Any = None,
     ) -> AsyncResultSet:
         """
         Execute a CQL query asynchronously.
@@ -98,7 +91,8 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         Raises:
             QueryError: If query execution fails.
         """
-        self._check_not_closed()
+        if self.is_closed:
+            raise ConnectionError("Session is closed")
 
         # Start metrics timing
         start_time = time.perf_counter()
@@ -106,38 +100,34 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         error_type = None
         result_size = 0
 
-        cassandra_exceptions = (
-            InvalidRequest,
-            Unavailable,
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-        )
-
         try:
-            async with ExceptionHandler("Query execution failed", QueryError, cassandra_exceptions):
-                response_future = self._session.execute_async(
-                    query,
-                    parameters,
-                    trace,
-                    custom_payload,
-                    timeout,
-                    execution_profile,
-                    paging_state,
-                    host,
-                    execute_as,
-                )
+            # Fix timeout handling - use _NOT_SET if timeout is None
+            response_future = self._session.execute_async(
+                query,
+                parameters,
+                trace,
+                custom_payload,
+                timeout if timeout is not None else _NOT_SET,
+                execution_profile,
+                paging_state,
+                host,
+                execute_as,
+            )
 
-                handler = AsyncResultHandler(response_future)
-                result = await handler.get_result()
+            handler = AsyncResultHandler(response_future)
+            result = await handler.get_result()
 
-                success = True
-                result_size = len(result.rows) if hasattr(result, "rows") else 0
-                return result
+            success = True
+            result_size = len(result.rows) if hasattr(result, "rows") else 0
+            return result
 
+        except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
+            # Re-raise Cassandra exceptions as QueryError
+            error_type = type(e).__name__
+            raise QueryError(f"Query execution failed: {str(e)}") from e
         except Exception as e:
             error_type = type(e).__name__
-            raise
+            raise QueryError(f"Query execution failed: {str(e)}") from e
         finally:
             # Record metrics if middleware is available
             if self._metrics:
@@ -156,19 +146,18 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
                     result_size=result_size,
                 )
 
-    @check_not_closed
     async def execute_stream(
         self,
-        query: Union[str, SimpleStatement, PreparedStatement],
-        parameters: Optional[Union[List, Dict]] = None,
-        stream_config: Optional[StreamConfig] = None,
+        query: Any,
+        parameters: Any = None,
+        stream_config: Any = None,
         trace: bool = False,
-        custom_payload: Optional[Dict[str, bytes]] = None,
-        timeout: Union[float, object] = _NOT_SET,
-        execution_profile: Union[str, ExecutionProfile] = EXEC_PROFILE_DEFAULT,
-        paging_state: Optional[bytes] = None,
-        host: Optional[Host] = None,
-        execute_as: Optional[str] = None,
+        custom_payload: Any = None,
+        timeout: Any = None,
+        execution_profile: Any = EXEC_PROFILE_DEFAULT,
+        paging_state: Any = None,
+        host: Any = None,
+        execute_as: Any = None,
     ) -> AsyncStreamingResultSet:
         """
         Execute a CQL query with streaming support for large result sets.
@@ -208,25 +197,16 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             async for page in result.pages():
                 process_batch(page)
         """
-        self._check_not_closed()
+        if self.is_closed:
+            raise ConnectionError("Session is closed")
 
-        cassandra_exceptions = (
-            InvalidRequest,
-            Unavailable,
-            ReadTimeout,
-            WriteTimeout,
-            OperationTimedOut,
-        )
-
-        async with ExceptionHandler(
-            "Streaming query execution failed", QueryError, cassandra_exceptions
-        ):
+        try:
             response_future = self._session.execute_async(
                 query,
                 parameters,
                 trace,
                 custom_payload,
-                timeout,
+                timeout if timeout is not None else _NOT_SET,
                 execution_profile,
                 paging_state,
                 host,
@@ -235,14 +215,16 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
 
             handler = StreamingResultHandler(response_future, stream_config)
             return await handler.get_streaming_result()
+        except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
+            raise QueryError(f"Streaming query execution failed: {str(e)}") from e
 
     async def execute_batch(
         self,
         batch_statement: BatchStatement,
         trace: bool = False,
         custom_payload: Optional[Dict[str, bytes]] = None,
-        timeout: Union[float, object] = _NOT_SET,
-        execution_profile: Union[str, ExecutionProfile] = EXEC_PROFILE_DEFAULT,
+        timeout: Any = None,
+        execution_profile: Any = EXEC_PROFILE_DEFAULT,
     ) -> AsyncResultSet:
         """
         Execute a batch statement asynchronously.
@@ -264,14 +246,11 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             batch_statement,
             trace=trace,
             custom_payload=custom_payload,
-            timeout=timeout,
+            timeout=timeout if timeout is not None else _NOT_SET,
             execution_profile=execution_profile,
         )
 
-    @check_not_closed
-    async def prepare(
-        self, query: str, custom_payload: Optional[Dict[str, bytes]] = None
-    ) -> PreparedStatement:
+    async def prepare(self, query: str, custom_payload: Any = None) -> PreparedStatement:
         """
         Prepare a CQL statement asynchronously.
 
@@ -285,11 +264,10 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         Raises:
             QueryError: If statement preparation fails.
         """
-        cassandra_exceptions = (InvalidRequest, OperationTimedOut)
+        if self.is_closed:
+            raise ConnectionError("Session is closed")
 
-        async with ExceptionHandler(
-            "Statement preparation failed", QueryError, cassandra_exceptions
-        ):
+        try:
             loop = asyncio.get_event_loop()
 
             # Prepare in executor to avoid blocking
@@ -298,6 +276,10 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             )
 
             return prepared
+        except (InvalidRequest, OperationTimedOut) as e:
+            raise QueryError(f"Statement preparation failed: {str(e)}") from e
+        except Exception as e:
+            raise QueryError(f"Statement preparation failed: {str(e)}") from e
 
     async def _do_close(self) -> None:
         """Perform the actual session shutdown."""

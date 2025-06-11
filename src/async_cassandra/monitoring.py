@@ -9,8 +9,7 @@ connection per host, monitoring these connections is crucial.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from cassandra.cluster import Host
@@ -21,12 +20,10 @@ from .session import AsyncCassandraSession
 logger = logging.getLogger(__name__)
 
 
-class HostStatus(Enum):
-    """Status of a Cassandra host."""
-
-    UP = "up"
-    DOWN = "down"
-    UNKNOWN = "unknown"
+# Host status constants
+HOST_STATUS_UP = "up"
+HOST_STATUS_DOWN = "down"
+HOST_STATUS_UNKNOWN = "unknown"
 
 
 @dataclass
@@ -36,7 +33,7 @@ class HostMetrics:
     address: str
     datacenter: Optional[str]
     rack: Optional[str]
-    status: HostStatus
+    status: str
     release_version: Optional[str]
     connection_count: int  # Always 1 for protocol v3+
     latency_ms: Optional[float] = None
@@ -80,7 +77,7 @@ class ConnectionMonitor:
             "requests_completed": 0,
             "requests_failed": 0,
             "last_health_check": None,
-            "monitoring_started": datetime.utcnow(),
+            "monitoring_started": datetime.now(timezone.utc),
         }
         self._monitoring_task: Optional[asyncio.Task] = None
         self._callbacks: List[Callable[[ClusterMetrics], Any]] = []
@@ -108,7 +105,7 @@ class ConnectionMonitor:
             address=str(host.address),
             datacenter=host.datacenter,
             rack=host.rack,
-            status=HostStatus.UP if host.is_up else HostStatus.DOWN,
+            status=HOST_STATUS_UP if host.is_up else HOST_STATUS_DOWN,
             release_version=host.release_version,
             connection_count=1 if host.is_up else 0,
         )
@@ -128,10 +125,10 @@ class ConnectionMonitor:
                 await self.session.execute(statement)
 
                 metrics.latency_ms = (asyncio.get_event_loop().time() - start) * 1000
-                metrics.last_check = datetime.utcnow()
+                metrics.last_check = datetime.now(timezone.utc)
 
             except Exception as e:
-                metrics.status = HostStatus.UNKNOWN
+                metrics.status = HOST_STATUS_UNKNOWN
                 metrics.last_error = str(e)
                 metrics.connection_count = 0
                 logger.warning(f"Health check failed for host {host.address}: {e}")
@@ -154,11 +151,11 @@ class ConnectionMonitor:
             host_metrics.append(host_metric)
 
         # Calculate summary statistics
-        healthy_hosts = sum(1 for h in host_metrics if h.status == HostStatus.UP)
-        unhealthy_hosts = sum(1 for h in host_metrics if h.status != HostStatus.UP)
+        healthy_hosts = sum(1 for h in host_metrics if h.status == HOST_STATUS_UP)
+        unhealthy_hosts = sum(1 for h in host_metrics if h.status != HOST_STATUS_UP)
 
         return ClusterMetrics(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             cluster_name=cluster.metadata.cluster_name,
             protocol_version=cluster.protocol_version,
             hosts=host_metrics,

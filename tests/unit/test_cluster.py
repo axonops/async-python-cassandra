@@ -131,7 +131,7 @@ class TestAsyncCluster:
                 await async_cluster.connect()
 
             assert "Failed to connect to cluster" in str(exc_info.value)
-            assert exc_info.value.cause is not None
+            assert exc_info.value.__cause__ is not None
 
     @pytest.mark.asyncio
     async def test_connect_on_closed_cluster(self, mock_cluster):

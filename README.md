@@ -16,7 +16,7 @@ The official Cassandra Python driver uses a separate thread pool for I/O operati
 ## 🚀 Key Features
 
 - ✅ True async/await support for Cassandra operations
-- ✅ Optimized for Python's single connection per host limitation
+- ✅ Optimized for the Python driver's connection model
 - ✅ Automatic retries with configurable policies
 - ✅ Support for prepared statements and batch operations
 - ✅ Type hints and full typing support
@@ -24,7 +24,6 @@ The official Cassandra Python driver uses a separate thread pool for I/O operati
 - ✅ Comprehensive test coverage including integration tests
 - ✅ Performance optimized for high-concurrency scenarios
 
-> **Important**: The Python Cassandra driver maintains only one TCP connection per host when using protocol v3+ (Cassandra 2.1+). This is a driver limitation due to Python's Global Interpreter Lock (GIL). See our [Connection Pooling Documentation](docs/connection-pooling.md) for details.
 
 ## 📋 Requirements
 
