@@ -382,7 +382,7 @@ Instead of claiming "25x improvement", here's the reality:
 - **Typical case**: Similar throughput to sync driver, better latency distribution
 - **Worst case**: Added overhead from thread-to-event-loop bridging
 
-The real benefit is **not blocking other operations**, not magically making Cassandra faster.
+🎯 The real benefit is **not blocking other operations**, not magically making Cassandra faster. ✅
 
 ### When Should You Use This?
 
