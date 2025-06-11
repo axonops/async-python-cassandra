@@ -25,11 +25,10 @@ class TestStressScenarios:
     """Stress test scenarios for async-cassandra."""
 
     @pytest_asyncio.fixture
-    async def stress_session(self, cassandra_container) -> AsyncCassandraSession:
+    async def stress_session(self) -> AsyncCassandraSession:
         """Create session for stress testing."""
         cluster = AsyncCluster(
-            contact_points=[cassandra_container.get_contact_point()],
-            port=cassandra_container.get_mapped_port(9042),
+            contact_points=["localhost"],
             # Optimize for high concurrency
             executor_threads=8,
             request_timeout=30.0,

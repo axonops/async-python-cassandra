@@ -22,7 +22,7 @@ class TestSelectRetryBehavior:
         user_id = uuid.uuid4()
         await cassandra_session.execute(
             "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
-            [user_id, "Test User", "test@example.com", 25]
+            [user_id, "Test User", "test@example.com", 25],
         )
 
         # Mock execute_async to simulate a read timeout on first attempt
@@ -48,9 +48,7 @@ class TestSelectRetryBehavior:
 
         with patch.object(cassandra_session._session, "execute_async", mock_execute_async):
             # Should succeed after retry
-            result = await cassandra_session.execute(
-                "SELECT * FROM users WHERE id = %s", [user_id]
-            )
+            result = await cassandra_session.execute("SELECT * FROM users WHERE id = %s", [user_id])
             row = result.one()
             assert row is not None
             assert row.name == "Test User"
@@ -66,13 +64,11 @@ class TestSelectRetryBehavior:
         user_id = uuid.uuid4()
         await cassandra_session.execute(
             "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
-            [user_id, "Test User", "test@example.com", 25]
+            [user_id, "Test User", "test@example.com", 25],
         )
 
         # Create SimpleStatement - should NOT need is_idempotent for SELECT
-        select_stmt = SimpleStatement(
-            "SELECT * FROM users WHERE id = %s"
-        )
+        select_stmt = SimpleStatement("SELECT * FROM users WHERE id = %s")
         # Verify is_idempotent is not set (defaults to False)
         assert select_stmt.is_idempotent is False
 
@@ -112,7 +108,6 @@ class TestSelectRetryBehavior:
         user_id = uuid.uuid4()
 
         # Mock to always fail
-        original_execute_async = cassandra_session._session.execute_async
         call_count = 0
 
         def mock_execute_async(statement, parameters=None, *args, **kwargs):
@@ -132,9 +127,7 @@ class TestSelectRetryBehavior:
         with patch.object(cassandra_session._session, "execute_async", mock_execute_async):
             # Should eventually fail after max retries (default is 3)
             with pytest.raises(ReadTimeout):
-                await cassandra_session.execute(
-                    "SELECT * FROM users WHERE id = %s", [user_id]
-                )
+                await cassandra_session.execute("SELECT * FROM users WHERE id = %s", [user_id])
 
         # Verify it tried max_retries + 1 times (initial + 3 retries)
         assert call_count == 4  # 1 initial + 3 retries
@@ -168,14 +161,12 @@ class TestSelectRetryBehavior:
         # Insert data first (before mocking)
         await cassandra_session.execute(
             "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)",
-            [user_id, "Test User", "test@example.com", 25]
+            [user_id, "Test User", "test@example.com", 25],
         )
 
         with patch.object(cassandra_session._session, "execute_async", mock_execute_async):
             # Should succeed after retry
-            result = await cassandra_session.execute(
-                "SELECT * FROM users WHERE id = %s", [user_id]
-            )
+            result = await cassandra_session.execute("SELECT * FROM users WHERE id = %s", [user_id])
             row = result.one()
             assert row is not None
             assert row.name == "Test User"
@@ -191,13 +182,11 @@ class TestSelectRetryBehavior:
         user_id = uuid.uuid4()
         await cassandra_session.execute(
             "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
-            [user_id, "Test User", "test@example.com", 25]
+            [user_id, "Test User", "test@example.com", 25],
         )
 
         # Prepare SELECT statement
-        prepared = await cassandra_session.prepare(
-            "SELECT * FROM users WHERE id = %s"
-        )
+        prepared = await cassandra_session.prepare("SELECT * FROM users WHERE id = %s")
         # Should not need is_idempotent for SELECT
         assert prepared.is_idempotent is False
 
@@ -238,7 +227,7 @@ class TestSelectRetryBehavior:
         for i in range(5):
             await cassandra_session.execute(
                 "INSERT INTO users (id, name, email, age) VALUES (%s, %s, %s, %s)",
-                [uuid.uuid4(), f"User{i}", f"user{i}@example.com", 20 + i]
+                [uuid.uuid4(), f"User{i}", f"user{i}@example.com", 20 + i],
             )
 
         # Mock to simulate timeout
@@ -278,7 +267,6 @@ class TestSelectRetryBehavior:
         user_id = uuid.uuid4()
 
         # Mock to simulate timeout with no data retrieved
-        original_execute_async = cassandra_session._session.execute_async
         call_count = 0
 
         def mock_execute_async(statement, parameters=None, *args, **kwargs):
@@ -298,9 +286,7 @@ class TestSelectRetryBehavior:
         with patch.object(cassandra_session._session, "execute_async", mock_execute_async):
             # Should fail immediately without retry
             with pytest.raises(ReadTimeout):
-                await cassandra_session.execute(
-                    "SELECT * FROM users WHERE id = %s", [user_id]
-                )
+                await cassandra_session.execute("SELECT * FROM users WHERE id = %s", [user_id])
 
         # Verify no retry happened (only initial attempt)
         assert call_count == 1
@@ -313,7 +299,7 @@ class TestSelectRetryBehavior:
         user_id = uuid.uuid4()
         await cassandra_session.execute(
             "INSERT INTO users (id, name, email, age) VALUES (?, ?, ?, ?)",
-            [user_id, "Test User", "test@example.com", 25]
+            [user_id, "Test User", "test@example.com", 25],
         )
 
         queries = [
@@ -355,7 +341,7 @@ class TestSelectRetryBehavior:
                     result = await cassandra_session.execute(query, params)
                 else:
                     result = await cassandra_session.execute(query)
-                
+
                 # Verify we got results
                 assert result is not None
 
