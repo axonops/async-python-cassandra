@@ -36,10 +36,7 @@ class TestThreadPoolConfigurationIntegration:
     async def test_thread_pool_size_affects_concurrency(self, cluster_factory):
         """Test that thread pool size actually limits concurrency."""
         # Create cluster with small thread pool
-        cluster = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=2
-        )
+        cluster = await cluster_factory(contact_points=["localhost"], executor_threads=2)
 
         session = await cluster.connect()
         await session.execute(
@@ -48,7 +45,7 @@ class TestThreadPoolConfigurationIntegration:
             WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}
             """
         )
-        await session.set_keyspace('test_thread_pool')
+        await session.set_keyspace("test_thread_pool")
 
         # Create a table
         await session.execute(
@@ -89,13 +86,10 @@ class TestThreadPoolConfigurationIntegration:
     async def test_larger_thread_pool_allows_more_concurrency(self, cluster_factory):
         """Test that larger thread pool allows more concurrent operations."""
         # Create cluster with larger thread pool
-        cluster = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=10
-        )
+        cluster = await cluster_factory(contact_points=["localhost"], executor_threads=10)
 
         session = await cluster.connect()
-        await session.set_keyspace('test_thread_pool')
+        await session.set_keyspace("test_thread_pool")
 
         # Measure time for concurrent queries
         start_time = time.time()
@@ -122,10 +116,7 @@ class TestThreadPoolConfigurationIntegration:
     async def test_thread_pool_saturation_behavior(self, cluster_factory):
         """Test behavior when thread pool is saturated."""
         # Create cluster with minimal threads
-        cluster = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=1
-        )
+        cluster = await cluster_factory(contact_points=["localhost"], executor_threads=1)
 
         session = await cluster.connect()
 
@@ -151,10 +142,7 @@ class TestThreadPoolConfigurationIntegration:
     @pytest.mark.asyncio
     async def test_executor_monitoring(self, cluster_factory):
         """Test monitoring executor queue depth."""
-        cluster = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=2
-        )
+        cluster = await cluster_factory(contact_points=["localhost"], executor_threads=2)
 
         session = await cluster.connect()
         executor = cluster._cluster.executor
@@ -173,7 +161,7 @@ class TestThreadPoolConfigurationIntegration:
 
         # Check that we can monitor the executor state
         # Note: _work_queue is implementation detail of ThreadPoolExecutor
-        if hasattr(executor, '_work_queue'):
+        if hasattr(executor, "_work_queue"):
             queue_size = executor._work_queue.qsize()
             # Should have queued tasks since we only have 2 threads
             assert queue_size > 0
@@ -189,10 +177,7 @@ class TestThreadPoolConfigurationIntegration:
         """Test different thread pool sizes for different workload patterns."""
 
         # Test 1: Low concurrency workload (web app)
-        cluster_low = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=4
-        )
+        cluster_low = await cluster_factory(contact_points=["localhost"], executor_threads=4)
         session_low = await cluster_low.connect()
 
         # Simulate web app pattern - sporadic queries
@@ -203,10 +188,7 @@ class TestThreadPoolConfigurationIntegration:
         await session_low.close()
 
         # Test 2: High concurrency workload (batch processing)
-        cluster_high = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=16
-        )
+        cluster_high = await cluster_factory(contact_points=["localhost"], executor_threads=16)
         session_high = await cluster_high.connect()
 
         # Simulate batch processing - many concurrent queries
@@ -221,10 +203,7 @@ class TestThreadPoolConfigurationIntegration:
     @pytest.mark.asyncio
     async def test_thread_pool_with_prepared_statements(self, cluster_factory):
         """Test thread pool behavior with prepared statements."""
-        cluster = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=4
-        )
+        cluster = await cluster_factory(contact_points=["localhost"], executor_threads=4)
 
         session = await cluster.connect()
 
@@ -235,7 +214,7 @@ class TestThreadPoolConfigurationIntegration:
             WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}
             """
         )
-        await session.set_keyspace('test_thread_pool')
+        await session.set_keyspace("test_thread_pool")
 
         await session.execute(
             """
@@ -247,9 +226,7 @@ class TestThreadPoolConfigurationIntegration:
         )
 
         # Prepare statement
-        prepared = await session.prepare(
-            "INSERT INTO prepared_test (id, value) VALUES (?, ?)"
-        )
+        prepared = await session.prepare("INSERT INTO prepared_test (id, value) VALUES (?, ?)")
 
         # Execute many prepared statements concurrently
         tasks = []
@@ -279,10 +256,7 @@ class TestThreadPoolConfigurationIntegration:
         baseline_memory = process.memory_info().rss / 1024 / 1024  # MB
 
         # Create cluster with many threads
-        cluster = await cluster_factory(
-            contact_points=['localhost'],
-            executor_threads=50
-        )
+        cluster = await cluster_factory(contact_points=["localhost"], executor_threads=50)
 
         # Force thread creation by submitting tasks
         futures = []
@@ -310,4 +284,3 @@ class TestThreadPoolConfigurationIntegration:
             future.cancel()
 
         await cluster.shutdown()
-

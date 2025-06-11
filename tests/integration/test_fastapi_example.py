@@ -30,7 +30,7 @@ def cassandra_service():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex(('localhost', 9042))
+            result = sock.connect_ex(("localhost", 9042))
             sock.close()
             if result == 0:
                 yield True
