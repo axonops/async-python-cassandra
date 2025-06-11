@@ -13,7 +13,10 @@ import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from prometheus_client import Counter, Gauge, Histogram
 
 logger = logging.getLogger(__name__)
 
@@ -141,10 +144,10 @@ class PrometheusMetricsCollector(MetricsCollector):
 
     def __init__(self) -> None:
         self._available = False
-        self.query_duration = None
-        self.query_total = None
-        self.connection_health = None
-        self.error_total = None
+        self.query_duration: Optional["Histogram"] = None
+        self.query_total: Optional["Counter"] = None
+        self.connection_health: Optional["Gauge"] = None
+        self.error_total: Optional["Counter"] = None
 
         try:
             from prometheus_client import Counter, Gauge, Histogram
