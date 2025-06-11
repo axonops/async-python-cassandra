@@ -77,6 +77,24 @@ The Cassandra Python driver uses a thread pool for I/O operations, which can bec
 
 See our [Architecture Overview](docs/architecture.md) for technical details.
 
+### 🔄 True Async Paging
+
+The standard Cassandra driver's manual paging (`fetch_next_page()`) is synchronous, which blocks your entire async application:
+
+```python
+# ❌ With standard driver - blocks the event loop
+result = await session.execute("SELECT * FROM large_table")
+while result.has_more_pages:
+    result.fetch_next_page()  # This blocks! Your app freezes here
+
+# ✅ With async-cassandra streaming - truly async
+result = await session.execute_stream("SELECT * FROM large_table")
+async for row in result:
+    await process_row(row)  # Non-blocking, other requests keep flowing
+```
+
+This is critical for web applications where blocking the event loop means all other requests stop being processed. For a detailed explanation of this issue, see our [streaming documentation](docs/streaming.md#the-async-problem-with-manual-paging).
+
 ## 🧪 Testing
 
 ```bash
