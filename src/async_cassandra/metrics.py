@@ -294,8 +294,9 @@ class MetricsMiddleware:
         normalized = re.sub(r"'[^']*'", "'?'", normalized)  # String literals
         normalized = re.sub(r"\b\d+\b", "?", normalized)  # Numbers
 
-        # Create a hash for storage efficiency
-        return hashlib.md5(normalized.encode()).hexdigest()[:12]
+        # Create a hash for storage efficiency (not for security)
+        # Using MD5 here is fine as it's just for creating identifiers
+        return hashlib.md5(normalized.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 # Factory function for easy setup
