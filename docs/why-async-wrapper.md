@@ -101,12 +101,19 @@ async with cluster:  # Not supported
 
 ### What async-cassandra Provides
 ```python
-# Proper async context manager support
+# Async context manager support (use carefully - see note below)
 async with AsyncCluster(['localhost']) as cluster:
     async with await cluster.connect() as session:
         result = await session.execute(query)
-# Automatic cleanup, even with exceptions
+# Automatic cleanup on exit
+
+# IMPORTANT: For production applications, create cluster/session once:
+cluster = AsyncCluster(['localhost'])
+session = await cluster.connect()
+# Reuse session for all requests - DO NOT close after each use
 ```
+
+**Note**: While async-cassandra provides context manager support for convenience in scripts and tests, production applications should create clusters and sessions once at startup and reuse them throughout the application lifetime. See the [FastAPI example](../examples/fastapi_app/main.py) for the correct pattern.
 
 ## 4. Lack of Async-First API Design
 
@@ -441,7 +448,7 @@ If you need to use Cassandra from an async Python application, you have three ch
 
 Until someone writes a true async Cassandra driver from scratch (massive undertaking), this wrapper provides the best available solution for async Python applications that need Cassandra.
 
-Is it "polishing a turd"? Perhaps. But when you need to integrate Cassandra with FastAPI or any async framework, a polished interface that doesn't block your event loop is infinitely better than the alternatives.
+While the underlying architecture remains thread-based, this wrapper provides essential compatibility for async applications. When you need to integrate Cassandra with FastAPI or any async framework, having an interface that doesn't block your event loop is crucial for maintaining application responsiveness.
 
 ## References
 
