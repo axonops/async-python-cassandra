@@ -38,27 +38,79 @@ Without idempotency checking, retrying write operations can cause:
    # The account could be debited multiple times!
    ```
 
-## How async-cassandra's Retry Policy Solves This
+## How async-cassandra's Retry Policy Works
 
-Our `AsyncRetryPolicy` adds a critical safety check:
+Our `AsyncRetryPolicy` handles different operation types intelligently:
+
+### For READ Operations (SELECTs)
+
+SELECTs are inherently idempotent - running the same query multiple times doesn't change data. The retry policy automatically retries read timeouts when it makes sense:
+
+```python
+# From async_cassandra/retry_policy.py
+def on_read_timeout(self, ...):
+    if retry_num >= self.max_retries:
+        return self.RETHROW, None
+    
+    # If we got some data, retry might succeed
+    if data_retrieved:
+        return self.RETRY, consistency
+    
+    # If we got enough responses, retry at same consistency
+    if received_responses >= required_responses:
+        return self.RETRY, consistency
+    
+    return self.RETHROW, None
+```
+
+This means:
+- **SELECTs are automatically retried** on timeout (up to max_retries)
+- **No idempotency check needed** for reads - they're always safe to retry
+- **Smart retry logic** - only retries if there's a good chance of success
+
+### For WRITE Operations (INSERT, UPDATE, DELETE)
+
+Writes are where idempotency becomes critical:
 
 ```python
 # From async_cassandra/retry_policy.py
 def on_write_timeout(self, query, ...):
+    if retry_num >= self.max_retries:
+        return self.RETHROW, None
+    
     # CRITICAL: Only retry if query is explicitly marked as idempotent
     if getattr(query, "is_idempotent", None) is not True:
         # Query is not idempotent - do not retry
         return self.RETHROW, None
-```
-
+    
+    # Only retry simple and batch writes that are explicitly idempotent
+    if write_type in ("SIMPLE", "BATCH"):
+        return self.RETRY, consistency
+    
+    return self.RETHROW, None
 This means:
 - **Safe writes are retried** - If you mark a query as idempotent, it will be retried on timeout
 - **Unsafe writes are not retried** - Non-idempotent writes fail fast to prevent corruption
-- **Explicit opt-in** - You must explicitly mark queries as idempotent
+- **Explicit opt-in** - You must explicitly mark write queries as idempotent
 
 ## How to Use It
 
-### Marking Queries as Idempotent
+### Read Queries (SELECTs)
+
+No special marking needed - SELECTs are automatically retried:
+
+```python
+# Automatically retried on timeout - no need to mark as idempotent
+result = await session.execute("SELECT * FROM users WHERE id = ?", [123])
+
+# Also automatically retried
+stmt = SimpleStatement("SELECT name, email FROM users WHERE active = true")
+result = await session.execute(stmt)
+```
+
+### Write Queries (INSERT, UPDATE, DELETE)
+
+For writes, you must explicitly mark idempotent queries:
 
 ```python
 from cassandra.query import SimpleStatement
@@ -109,10 +161,12 @@ cluster = AsyncCluster(
 
 | Scenario | Driver's RetryPolicy | async-cassandra's AsyncRetryPolicy |
 |----------|---------------------|-----------------------------------|
-| Read timeout | Retries if data retrieved | Same, with max retry limit |
+| **Read timeout (SELECT)** | Retries if data retrieved | Same, with max retry limit |
 | Write timeout (BATCH_LOG) | Always retries | Only if marked idempotent |
 | Write timeout (SIMPLE/BATCH) | Never retries | Only if marked idempotent |
 | Unavailable | Retries with next host | Same, with max retry limit |
+
+The key difference is for write operations - we add safety by checking idempotency.
 
 ## Best Practices
 
@@ -121,7 +175,42 @@ cluster = AsyncCluster(
 3. **Set absolute values, not increments** - `SET count = 5` is idempotent, `SET count = count + 1` is not
 4. **Use prepared statements** - They can be marked as idempotent once and reused
 
-## Example: Idempotent vs Non-Idempotent
+## Example: Different Query Types
+
+```python
+# ✅ SELECTs - Always safe to retry (automatically handled)
+async def get_user(user_id):
+    # No need to mark as idempotent - SELECTs are always retried
+    return await session.execute(
+        "SELECT * FROM users WHERE id = ?",
+        [user_id]
+    )
+
+async def search_users(status):
+    # Also automatically retried on timeout
+    return await session.execute(
+        "SELECT * FROM users WHERE status = ? ALLOW FILTERING",
+        [status]
+    )
+
+# ✅ IDEMPOTENT WRITES - Must be explicitly marked
+async def create_user_idempotent(user_id, email):
+    stmt = SimpleStatement(
+        "INSERT INTO users (id, email) VALUES (?, ?) IF NOT EXISTS",
+        is_idempotent=True  # Safe because of IF NOT EXISTS
+    )
+    return await session.execute(stmt, [user_id, email])
+
+# ❌ NON-IDEMPOTENT WRITES - Should NOT be marked
+async def increment_login_count(user_id):
+    # This MUST NOT be marked as idempotent - could increment multiple times
+    return await session.execute(
+        "UPDATE users SET login_count = login_count + 1 WHERE id = ?",
+        [user_id]
+    )
+```
+
+## More Examples: Idempotent vs Non-Idempotent Writes
 
 ```python
 # ✅ IDEMPOTENT - Safe to retry
@@ -159,10 +248,20 @@ async def increment_login_count(user_id):
 
 ## Summary
 
-async-cassandra's retry policy is not just a wrapper - it's a safety feature that:
-- Prevents data corruption from retry-related issues
-- Requires explicit marking of idempotent queries
-- Maintains the benefits of automatic retries for safe operations
-- Protects against the most common Cassandra anti-patterns
+async-cassandra's retry policy provides intelligent retry behavior:
 
-This is why we "reinvented" the retry policy - to provide a safer default that prevents common but serious data integrity issues.
+1. **SELECTs are automatically retried** - The retry policy's `on_read_timeout` method returns `RETRY` when appropriate conditions are met (data retrieved or sufficient responses received)
+2. **Writes require explicit idempotency marking** - Prevents accidental data corruption by checking `is_idempotent=True`
+3. **Configurable retry limits** - Default is 3 retries, avoiding infinite retry loops
+4. **Smart retry decisions** - Only retries when there's a good chance of success
+
+The key insight is that while the cassandra-driver's retry policy works, it doesn't distinguish between safe and unsafe write operations. Our retry policy adds this critical safety check while maintaining all the benefits of automatic retries for read operations.
+
+## Technical Details
+
+The retry behavior is handled by the underlying cassandra-driver:
+- When a timeout exception occurs, the driver calls the retry policy's appropriate method
+- If the policy returns `RETRY`, the driver automatically retries the query
+- This happens transparently - your code just sees either success or final failure
+
+The `AsyncRetryPolicy` is automatically set as the default retry policy when creating an `AsyncCluster`, so all queries benefit from this behavior without any additional configuration.
