@@ -116,7 +116,7 @@ class ContainerManager:
         """Check if Cassandra is available (either via container or existing service)."""
         # First check if Cassandra is available on the port
         import socket
-        
+
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
@@ -127,7 +127,7 @@ class ContainerManager:
                 return True
         except Exception:
             pass
-        
+
         # If not available on port, check if our container is running
         try:
             result = subprocess.run(
