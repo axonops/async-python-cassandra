@@ -118,6 +118,29 @@ This works, but has limitations:
 
 ### The Async Problem with Manual Paging
 
+To understand why manual paging doesn't work well with async applications, you need to understand how async/await works:
+
+#### What is the Event Loop?
+
+In async Python applications, there's a single "event loop" that manages all concurrent operations:
+
+```python
+# Simplified view of what happens in an async app
+async def handle_request_1():
+    data = await database.query()  # Event loop switches to other tasks
+    return process(data)
+
+async def handle_request_2():
+    result = await api.call()      # Event loop switches to other tasks
+    return format(result)
+
+# Event loop runs both concurrently by switching between them
+```
+
+The magic happens when you use `await` - it tells the event loop "I'm waiting for something, go handle other requests!"
+
+#### Why Blocking Calls Break Everything
+
 Here's what happens when you try manual paging in an async application:
 
 ```python
@@ -129,16 +152,57 @@ async def process_with_manual_paging():
     while True:
         # Process current page
         for row in result.current_rows:
-            await process_row(row)  # Async processing
+            await process_row(row)  # ✅ Async - doesn't block
         
         if not result.has_more_pages:
             break
             
         # This BLOCKS the event loop! 😱
-        result.fetch_next_page()  # No async version exists
+        result.fetch_next_page()  # ❌ Synchronous - blocks EVERYTHING
 ```
 
-The `fetch_next_page()` method is synchronous and will block your entire async application!
+When `fetch_next_page()` is called:
+1. It makes a network request to Cassandra (could take 10-100ms)
+2. During this time, the event loop is FROZEN
+3. NO other requests can be processed
+4. Your entire application becomes unresponsive
+
+#### Visual Comparison
+
+```mermaid
+sequenceDiagram
+    participant R1 as Request 1
+    participant R2 as Request 2
+    participant EL as Event Loop
+    participant DB as Cassandra
+    
+    Note over EL: With blocking fetch_next_page()
+    R1->>EL: Process page 1
+    R2->>EL: New request arrives
+    EL->>DB: fetch_next_page() [BLOCKING]
+    Note over EL,R2: Event loop frozen!<br/>Request 2 must wait!
+    DB-->>EL: Page 2 (after 50ms)
+    EL-->>R1: Continue processing
+    EL-->>R2: Finally handle request 2
+    
+    Note over EL: With async streaming
+    R1->>EL: Process page 1
+    R2->>EL: New request arrives
+    EL->>DB: await fetch_next (non-blocking)
+    EL->>R2: Handle request 2 immediately
+    DB-->>EL: Page 2 ready
+    EL-->>R1: Continue with page 2
+```
+
+#### Real-World Impact
+
+Imagine a web server handling 100 requests/second:
+- Each `fetch_next_page()` blocks for 50ms
+- During those 50ms, 5 new requests arrive but can't be processed
+- Those requests timeout or pile up
+- Your server appears slow or unresponsive
+
+This is why `fetch_next_page()` not having an async version is a critical limitation!
 
 ## How Streaming Solves This
 
