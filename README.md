@@ -30,7 +30,7 @@ This library provides true async/await support, enabling:
 - **Seamless Integration**: Works naturally with FastAPI, aiohttp, and other async frameworks
 - **Proper Backpressure**: Async operations allow better control over concurrency
 
-See our [Architecture Overview](docs/architecture.md) for technical details.
+See our [Architecture Overview](docs/architecture.md) for technical details, or learn more about [What This Wrapper Actually Solves (And What It Doesn't)](docs/why-async-wrapper.md#what-this-wrapper-actually-solves-and-what-it-doesnt).
 
 ### 🔄 True Async Paging
 
