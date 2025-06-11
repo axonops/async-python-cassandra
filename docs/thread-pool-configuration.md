@@ -2,7 +2,7 @@
 
 ## Overview
 
-The DataStax Cassandra Python driver uses a thread pool for executing I/O operations. This document explains how to configure the thread pool size and the implications of different configurations.
+The DataStax Cassandra Python driver uses a thread pool executor for I/O operations. This document explains how to configure the thread pool size.
 
 ## Default Configuration
 
@@ -17,343 +17,69 @@ import multiprocessing
 num_threads = min(4, multiprocessing.cpu_count() * 2)
 ```
 
-On most systems:
-- 1 CPU core: 2 threads
-- 2+ CPU cores: 4 threads
-
 ## How to Configure Thread Pool Size
 
-### Method 1: Configure the Cluster Executor
+The `executor_threads` parameter controls the size of the thread pool:
 
 ```python
-from concurrent.futures import ThreadPoolExecutor
 from async_cassandra import AsyncCluster
 
-# Create a custom executor with more threads
-custom_executor = ThreadPoolExecutor(max_workers=16)
-
-# Pass it to the cluster
+# Create cluster with custom thread pool size
 cluster = AsyncCluster(
     contact_points=['localhost'],
-    executor_threads=16,  # This sets the executor thread count
-    # OR use a custom executor directly:
-    # executor=custom_executor
+    executor_threads=16  # Set the number of executor threads
 )
+
+# Verify the configuration
+print(f"Thread pool size: {cluster._cluster.executor._max_workers}")
 ```
 
-### Method 2: Set Global Default
+## Accessing the Thread Pool
+
+You can access the underlying executor to monitor or interact with it:
 
 ```python
-from cassandra.cluster import Cluster
+# Get the executor
+executor = cluster._cluster.executor
 
-# Set default for all clusters
-Cluster.executor_threads = 16
+# Check thread pool size
+thread_count = executor._max_workers
 
-# Now all clusters will use 16 threads
-cluster = AsyncCluster(['localhost'])
+# The executor is a standard concurrent.futures.ThreadPoolExecutor
+# You can use any ThreadPoolExecutor methods and properties
 ```
 
-## Thread Pool Size Considerations
+## Important Notes
 
-### When to Increase Thread Pool Size
+- The `executor_threads` parameter must be set for each cluster instance
+- There is no global default configuration mechanism
+- The executor is created when the cluster is initialized and cannot be changed afterwards
+- Each thread in the pool can handle one blocking I/O operation at a time
+- The async-cassandra wrapper uses this same thread pool for its operations
 
-**Increase threads when:**
-- You have high query concurrency (100s of concurrent queries)
-- Your queries have high latency (e.g., cross-region queries)
-- You're seeing queries queuing up waiting for threads
-- You have sufficient CPU and memory resources
-
-**Example calculation:**
-```python
-# If average query takes 50ms and you need 1000 queries/second:
-# Required threads = (queries_per_second * avg_query_time_seconds)
-# Required threads = 1000 * 0.05 = 50 threads
-
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=50
-)
-```
-
-### When NOT to Increase Thread Pool Size
-
-**Keep default size when:**
-- You have low query concurrency (<50 concurrent queries)
-- Your application is memory-constrained
-- You're running on systems with limited CPU cores
-- Your queries are already fast (<10ms)
-
-## Performance Impact
-
-### Memory Usage
-
-Each thread consumes approximately 1.5-2MB of memory. This can be measured empirically:
+## Example
 
 ```python
-import os
-import psutil
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
-
-# Measure thread pool memory overhead
-process = psutil.Process(os.getpid())
-baseline_mb = process.memory_info().rss / 1024 / 1024
-
-# Create executor with specific thread count
-executor = ThreadPoolExecutor(max_workers=20)
-
-# Submit enough tasks to force all threads to be created
-futures = []
-for i in range(20):
-    futures.append(executor.submit(time.sleep, 10))
-
-time.sleep(1)  # Let threads initialize
-
-current_mb = process.memory_info().rss / 1024 / 1024
-thread_overhead_mb = current_mb - baseline_mb
-
-print(f"Total overhead for 20 threads: {thread_overhead_mb:.1f} MB")
-print(f"Per thread: {thread_overhead_mb/20:.1f} MB")
-
-# Cleanup
-executor.shutdown(wait=False)
-```
-
-**Typical memory usage:**
-- 16 threads ≈ 24-32MB additional memory
-- 50 threads ≈ 75-100MB additional memory  
-- 100 threads ≈ 150-200MB additional memory
-
-### CPU Overhead
-
-More threads mean:
-- More context switching
-- Higher GIL contention
-- Increased scheduler overhead
-
-**Benchmarking example:**
-```python
-import time
 import asyncio
 from async_cassandra import AsyncCluster
 
-async def benchmark_thread_pool(thread_count):
+async def main():
+    # Create cluster with 8 executor threads
     cluster = AsyncCluster(
         contact_points=['localhost'],
-        executor_threads=thread_count
+        executor_threads=8
     )
+    
+    # Connect and use the cluster
     session = await cluster.connect()
     
-    # Run 1000 concurrent queries
-    start = time.time()
-    tasks = []
-    for _ in range(1000):
-        tasks.append(session.execute("SELECT * FROM system.local"))
+    # Your queries will be executed using the configured thread pool
+    result = await session.execute("SELECT * FROM system.local")
     
-    await asyncio.gather(*tasks)
-    duration = time.time() - start
-    
+    # Cleanup
     await session.close()
     await cluster.shutdown()
-    
-    return duration
 
-# Test different thread pool sizes
-for threads in [4, 8, 16, 32, 64]:
-    duration = await benchmark_thread_pool(threads)
-    print(f"{threads} threads: {duration:.2f}s")
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
-
-## Monitoring Thread Pool Usage
-
-### Check Current Configuration
-
-```python
-from async_cassandra import AsyncCluster
-
-cluster = AsyncCluster(['localhost'])
-print(f"Executor threads: {cluster.executor_threads}")
-print(f"Executor type: {type(cluster.executor)}")
-```
-
-### Monitor Thread Pool Saturation
-
-```python
-import asyncio
-from async_cassandra import AsyncCluster
-
-async def monitor_executor(cluster):
-    """Monitor executor queue depth"""
-    executor = cluster.executor
-    
-    while True:
-        # Check pending tasks in executor
-        pending = executor._work_queue.qsize()
-        active = executor._threads
-        
-        print(f"Pending tasks: {pending}, Active threads: {len(active)}")
-        
-        if pending > 10:
-            print("WARNING: Thread pool may be saturated!")
-        
-        await asyncio.sleep(1)
-```
-
-## Best Practices
-
-### 1. Start Conservative
-```python
-# Start with default and increase if needed
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=8  # 2x default
-)
-```
-
-### 2. Monitor and Adjust
-```python
-# Use metrics to guide configuration
-from async_cassandra import AsyncCluster, MetricsCollector
-
-metrics = MetricsCollector()
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=16,
-    metrics_collector=metrics
-)
-
-# Monitor query latencies and queue depths
-# Adjust threads based on actual usage
-```
-
-### 3. Consider Connection Pool Size
-```python
-# Thread pool should be >= connection pool
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=32,
-    protocol_version=4,
-    # Each host can have up to core_connections_per_host
-    core_connections_per_host=8,
-)
-```
-
-### 4. Use Connection Pooling Wisely
-```python
-# Don't create too many connections per thread
-# Rough formula: executor_threads >= total_connections / 4
-
-num_hosts = 3
-connections_per_host = 8
-total_connections = num_hosts * connections_per_host  # 24
-
-# Need at least 6-8 executor threads
-cluster = AsyncCluster(
-    contact_points=['host1', 'host2', 'host3'],
-    executor_threads=8,
-    core_connections_per_host=8
-)
-```
-
-## Common Pitfalls
-
-### 1. Too Many Threads
-```python
-# DON'T: Create hundreds of threads
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=500  # Too many!
-)
-
-# Problems:
-# - High memory usage (1GB+)
-# - Excessive context switching
-# - GIL contention
-# - Diminishing returns
-```
-
-### 2. Thread Starvation
-```python
-# DON'T: Too few threads for workload
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=2  # Default might be too low
-)
-
-# If running 100 concurrent queries:
-# - Only 2 can execute at once
-# - Others queue up
-# - Latency increases dramatically
-```
-
-### 3. Mismatched Configuration
-```python
-# DON'T: More connections than threads
-cluster = AsyncCluster(
-    contact_points=['localhost'] * 10,  # 10 hosts
-    executor_threads=4,  # Only 4 threads
-    core_connections_per_host=8  # 80 total connections!
-)
-
-# Connections will be underutilized
-```
-
-## Recommendations by Use Case
-
-### Web Application (FastAPI/Flask)
-```python
-# Moderate concurrency, latency-sensitive
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=16,  # 4x default
-    request_timeout=5.0
-)
-```
-
-### Batch Processing
-```python
-# High throughput, less latency-sensitive
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=32,  # Handle many concurrent batches
-    request_timeout=30.0
-)
-```
-
-### Microservice
-```python
-# Limited resources, predictable load
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=8,  # Conservative
-    request_timeout=2.0
-)
-```
-
-### Data Analytics
-```python
-# Large queries, high memory usage
-cluster = AsyncCluster(
-    contact_points=['localhost'],
-    executor_threads=8,  # Keep low to save memory
-    request_timeout=60.0
-)
-```
-
-## Conclusion
-
-The thread pool size is a critical tuning parameter that affects:
-- **Concurrency**: How many queries can execute simultaneously
-- **Memory usage**: Each thread costs ~2MB
-- **CPU overhead**: More threads = more context switching
-- **Latency**: Too few threads = queries queue up
-
-**General guidelines:**
-- Start with 2-4x the default (8-16 threads)
-- Monitor queue depth and latency
-- Increase gradually based on metrics
-- Consider memory and CPU constraints
-- Match to your connection pool configuration
-
-Remember: The async-cassandra wrapper doesn't eliminate the thread pool - it makes it work better with async Python applications. Understanding and configuring the thread pool properly is essential for optimal performance.
