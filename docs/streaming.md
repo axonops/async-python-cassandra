@@ -582,20 +582,20 @@ result = await session.execute_stream(
 
 ```mermaid
 graph TD
-    A[Query Result Size] --> B{More than 5000 rows?}
-    B -->|Yes| C{Memory constrained?}
-    B -->|No| D[Use regular execute()]
+    A[Query Result Size] --> B{"More than 5000 rows?"}
+    B -->|Yes| C{"Memory constrained?"}
+    B -->|No| D["Use regular execute()"]
     
-    C -->|Yes| E[Use execute_stream()<br/>with small fetch_size]
-    C -->|No| F{Need progress tracking?}
+    C -->|Yes| E["Use execute_stream()<br/>with small fetch_size"]
+    C -->|No| F{"Need progress tracking?"}
     
-    F -->|Yes| G[Use execute_stream()<br/>with callbacks]
-    F -->|No| H{Process incrementally?}
+    F -->|Yes| G["Use execute_stream()<br/>with callbacks"]
+    F -->|No| H{"Process incrementally?"}
     
     H -->|Yes| G
-    H -->|No| I{Network latency high?}
+    H -->|No| I{"Network latency high?"}
     
-    I -->|Yes| J[Consider regular execute()<br/>or large fetch_size]
+    I -->|Yes| J["Consider regular execute()<br/>or large fetch_size"]
     I -->|No| G
 ```
 
