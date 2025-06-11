@@ -50,6 +50,24 @@ async for row in result:
 
 This is critical for web applications where blocking the event loop means all other requests stop being processed. For a detailed explanation of this issue, see our [streaming documentation](docs/streaming.md#the-async-problem-with-manual-paging).
 
+## ⚠️ Important Limitations
+
+This wrapper makes the cassandra-driver compatible with async Python applications, but it's important to understand what it does and doesn't do:
+
+**What it DOES**:
+- ✅ Prevents blocking the event loop
+- ✅ Provides async/await syntax
+- ✅ Enables use with async frameworks (FastAPI, aiohttp)
+- ✅ Allows concurrent operations via event loop
+
+**What it DOESN'T do**:
+- ❌ Make the underlying I/O truly asynchronous (still uses threads)
+- ❌ Provide performance improvements over the sync driver
+- ❌ Handle thousands of concurrent connections (limited by thread pool)
+- ❌ Remove thread overhead
+
+The cassandra-driver uses blocking sockets and thread pools internally. This wrapper provides a compatibility layer but cannot change the fundamental architecture. For a detailed technical analysis, see our [Why Async Wrapper](docs/why-async-wrapper.md#what-this-wrapper-actually-solves-and-what-it-doesnt) documentation.
+
 ## 🚀 Key Features
 
 - **Async/await interface** for all Cassandra operations

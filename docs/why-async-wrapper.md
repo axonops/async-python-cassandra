@@ -279,23 +279,169 @@ async for row in await session.execute_stream(query):
 - Better IDE support
 - Catch errors at development time
 
+## What This Wrapper Actually Solves (And What It Doesn't)
+
+### The Reality Check
+
+Let's be completely honest: the cassandra-driver is fundamentally a **synchronous, thread-based driver**. No wrapper can change this underlying architecture. Here's what we're really dealing with:
+
+#### The Driver's Architecture
+
+From analyzing the source code:
+
+1. **All I/O is blocking** ([connection.py](https://github.com/datastax/python-driver/blob/3.29.2/cassandra/connection.py#L425)):
+   ```python
+   # Actual socket operations block the thread
+   self._socket.send(data)  # Blocks
+   data = self._socket.recv(self.in_buffer_size)  # Blocks
+   ```
+
+2. **"Async" means thread pool** ([cluster.py](https://github.com/datastax/python-driver/blob/3.29.2/cassandra/cluster.py#L2718)):
+   ```python
+   def execute_async(self, query, ...):
+       # Just submits to thread pool
+       future = self._create_response_future(query, ...)
+       self.submit(self._connection_holder.get_connection, ...)
+       return future  # Not an asyncio.Future!
+   ```
+
+3. **ResponseFuture is not asyncio-compatible**:
+   - Custom future implementation
+   - Callbacks run in thread pool threads
+   - No native event loop integration
+
+### What async-cassandra Actually Does
+
+The wrapper provides a **bridge** between the thread-based driver and asyncio:
+
+```python
+# What happens under the hood
+def _asyncio_future_from_response_future(response_future):
+    asyncio_future = asyncio.Future()
+    
+    def callback(result):
+        # Bridge from thread to event loop
+        loop.call_soon_threadsafe(
+            asyncio_future.set_result, result
+        )
+    
+    response_future.add_callback(callback)
+    return asyncio_future
+```
+
+### What This Solves
+
+1. **Developer Experience**:
+   - Clean async/await syntax
+   - Natural error handling with try/except
+   - Integration with async frameworks (FastAPI, aiohttp)
+
+2. **Event Loop Compatibility**:
+   - Prevents blocking the event loop with synchronous calls
+   - Allows other coroutines to run while waiting for Cassandra
+
+3. **Async Paging** (with caveats):
+   - Wraps page fetching to not block event loop
+   - But still uses threads under the hood
+
+### What This CANNOT Solve
+
+1. **Thread Pool Overhead**:
+   - Every query still goes through the thread pool
+   - Limited by thread pool size (default 2-4 threads)
+   - Thread creation/switching overhead remains
+
+2. **True Async Performance**:
+   - Not comparable to truly async drivers (like aioredis)
+   - Still limited by GIL and thread contention
+   - Cannot handle thousands of concurrent connections
+
+3. **Resource Usage**:
+   - Threads still consume ~2MB each
+   - Thread pool must be sized appropriately
+   - Not as lightweight as pure coroutines
+
+4. **Fundamental Blocking Operations**:
+   - Connection establishment blocks threads
+   - DNS resolution blocks threads
+   - SSL handshakes block threads
+
+### Performance Reality
+
+Instead of claiming "25x improvement", here's the reality:
+
+- **Best case**: Prevents event loop blocking, allowing better concurrency
+- **Typical case**: Similar throughput to sync driver, better latency distribution
+- **Worst case**: Added overhead from thread-to-event-loop bridging
+
+The real benefit is **not blocking other operations**, not magically making Cassandra faster.
+
+### When Should You Use This?
+
+**Use async-cassandra when**:
+- You have an async application (FastAPI, aiohttp)
+- You need to prevent blocking the event loop
+- You want cleaner async/await syntax
+- You're already committed to the cassandra-driver
+
+**Don't use it expecting**:
+- True async performance like aioredis or asyncpg
+- To handle thousands of concurrent queries
+- To eliminate thread overhead
+- Magic performance improvements
+
+### The Honest Comparison
+
+| Aspect | True Async Driver (e.g., asyncpg) | async-cassandra |
+|--------|-----------------------------------|-----------------|
+| I/O Model | Non-blocking sockets | Blocking sockets in threads |
+| Concurrency | Thousands of connections | Limited by thread pool |
+| Memory | ~2KB per connection | ~2MB per thread |
+| CPU Usage | Single thread | Multiple threads + GIL |
+| Performance | High | Moderate |
+| Integration | Native async | Adapted via callbacks |
+
+### Future Possibilities
+
+A truly async Cassandra driver would require:
+- Complete rewrite using non-blocking I/O
+- Native asyncio protocol implementation
+- Elimination of thread pools
+- Direct event loop integration
+
+This is a massive undertaking that the cassandra-driver team hasn't prioritized, likely because:
+- Significant engineering effort required
+- Need to maintain compatibility
+- Current solution works for most use cases
+
 ## Conclusion
 
-The async-cassandra wrapper is necessary because:
+The async-cassandra wrapper exists to solve a specific problem:
 
-1. **Fundamental Design Mismatch**: The cassandra-driver was designed before async/await became standard in Python. It uses threads, callbacks, and its own event loop - patterns that don't integrate well with modern async Python.
+**Modern async Python applications need to use Cassandra without blocking the event loop.**
 
-2. **Multiple Blocking Operations**: Not just paging - `prepare()`, `shutdown()`, and `set_keyspace()` are all synchronous methods as documented in the [Session API](https://docs.datastax.com/en/developer/python-driver/3.29/api/cassandra/cluster/#cassandra.cluster.Session).
+This wrapper provides:
+- **Event loop compatibility** - Prevents blocking other operations
+- **Framework integration** - Works with FastAPI, aiohttp, etc.
+- **Better developer experience** - async/await instead of callbacks
+- **Streaming without blocking** - Page fetching doesn't freeze your app
 
-3. **Thread Pool Limitations**: The default thread pool size of 2-4 threads can become a bottleneck in high-concurrency scenarios.
+But let's be clear about what it is:
+- **A compatibility layer**, not a performance enhancement
+- **A bridge between threads and asyncio**, not true async I/O
+- **A practical solution**, not a perfect one
 
-4. **Developer Experience**: Callbacks and futures are harder to work with than async/await. The wrapper provides a modern, Pythonic API.
+### The Bottom Line
 
-5. **Resource Management**: Proper async context managers and cleanup are essential for production applications.
+If you need to use Cassandra from an async Python application, you have three choices:
 
-6. **Ecosystem Compatibility**: Modern Python frameworks (FastAPI, aiohttp) expect true async/await support.
+1. **Use synchronous calls** - Blocks your event loop, kills concurrency
+2. **Use execute_async() directly** - Callbacks, no async/await, still blocks on paging
+3. **Use this wrapper** - Clean async/await, no event loop blocking, but still threads underneath
 
-This wrapper doesn't replace the cassandra-driver - it adapts it for modern async Python applications. The underlying driver is excellent for synchronous use cases, but async applications need this adaptation layer to function efficiently.
+Until someone writes a true async Cassandra driver from scratch (massive undertaking), this wrapper provides the best available solution for async Python applications that need Cassandra.
+
+Is it "polishing a turd"? Perhaps. But when you need to integrate Cassandra with FastAPI or any async framework, a polished interface that doesn't block your event loop is infinitely better than the alternatives.
 
 ## References
 
