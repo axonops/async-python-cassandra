@@ -15,7 +15,15 @@ The official Cassandra Python driver uses a separate thread pool for I/O operati
 
 ## 🏗️ Why async-cassandra?
 
-The Cassandra Python driver uses a thread pool for I/O operations, which can become a bottleneck in async applications. This library provides true async/await support, enabling:
+### Understanding Async vs Sync
+
+In async Python applications, an **event loop** manages all operations in a single thread. Think of it like a smart traffic controller - it efficiently switches between tasks whenever one is waiting for I/O (like a database query). This allows handling thousands of concurrent requests without creating thousands of threads.
+
+However, when you use a **synchronous (blocking)** operation in an async application, it's like that traffic controller suddenly freezing - all traffic stops until that one operation completes. If a database query takes 100ms and blocks the event loop, that means your web server can't process ANY other requests during those 100ms. This is why the standard Cassandra driver's thread pool approach doesn't work well with async frameworks.
+
+### The Benefits
+
+This library provides true async/await support, enabling:
 
 - **Better Performance**: Handle thousands of concurrent queries efficiently
 - **Lower Resource Usage**: No thread pool overhead
