@@ -92,7 +92,7 @@ def _send_query_in_thread():
 ```
 
 ### 2. Thread Pool Bottleneck
-- Default: 2-4 executor threads
+- Default: 2-4 executor threads ([configurable](thread-pool-configuration.md))
 - Each blocking I/O operation ties up a thread
 - Under load, queries queue up waiting for threads
 
@@ -114,8 +114,8 @@ ResponseFuture (threading-based) ─bridge─> asyncio.Future
 ### Memory Overhead
 ```
 Per Connection:
-- Read thread: ~1MB
-- Write thread: ~1MB
+- Read thread: ~1MB*
+- Write thread: ~1MB*
 - Socket buffers: ~64KB
 
 Per Query:
@@ -123,6 +123,8 @@ Per Query:
 - asyncio.Future object
 - Bridge callback overhead
 ```
+
+*\*Thread memory breakdown: See [detailed explanation](why-async-wrapper.md#the-honest-comparison) for how the ~1-2MB per thread is calculated.*
 
 ### CPU Overhead
 ```

@@ -356,7 +356,7 @@ def _asyncio_future_from_response_future(response_future):
 
 1. **Thread Pool Overhead**:
    - Every query still goes through the thread pool
-   - Limited by thread pool size (default 2-4 threads)
+   - Limited by thread pool size (default 2-4 threads) - [see configuration guide](thread-pool-configuration.md)
    - Thread creation/switching overhead remains
 
 2. **True Async Performance**:
@@ -408,10 +408,28 @@ Think of it this way: Without this wrapper, when your app queries Cassandra, it'
 |--------|-----------------------------------|-----------------|
 | I/O Model | Non-blocking sockets | Blocking sockets in threads |
 | Concurrency | Thousands of connections | Limited by thread pool |
-| Memory | ~2KB per connection | ~2MB per thread |
+| Memory | ~2KB per connection | ~2MB per thread* |
 | CPU Usage | Single thread | Multiple threads + GIL |
 | Performance | High | Moderate |
 | Integration | Native async | Adapted via callbacks |
+
+*\*Memory calculation: Each thread in Python requires approximately 2MB of memory, broken down as:*
+- **Thread stack**: 1MB default on Linux/macOS (configurable via `ulimit -s`)
+- **Python interpreter state**: ~256KB for thread-local storage
+- **Thread management overhead**: ~256KB for locks, queues, and synchronization primitives
+- **Buffer allocations**: ~512KB for I/O buffers and temporary objects
+
+*You can verify this on your system:*
+```bash
+# Check default stack size
+ulimit -s  # Usually 8192 KB on macOS, 8192 KB on Linux
+
+# Python uses a smaller stack by default (~1MB)
+python -c "import threading; print(threading.stack_size())"  # 0 means system default
+
+# Monitor actual memory usage
+# Run a simple threaded program and check RSS increase per thread
+```
 
 ### Future Possibilities
 

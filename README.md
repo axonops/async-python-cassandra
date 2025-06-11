@@ -9,9 +9,9 @@
 
 ## ✨ Overview
 
-An async Python wrapper for the Cassandra Python driver that provides true asynchronous operations, addressing the performance limitations of the official driver when used with async frameworks like FastAPI.
+A Python library that enables the Cassandra driver to work seamlessly with async frameworks like FastAPI, aiohttp, and Quart. It provides an async/await interface that prevents blocking your application's event loop while maintaining full compatibility with the DataStax Python driver.
 
-The official Cassandra Python driver uses a separate thread pool for I/O operations, which can become a bottleneck in high-concurrency async applications. This library wraps the driver's async functionality to provide proper async/await support that integrates seamlessly with Python's asyncio event loop.
+When using the standard Cassandra driver in async applications, blocking operations can freeze your entire service. This wrapper solves that critical issue by bridging the gap between Cassandra's thread-based I/O and Python's async ecosystem, ensuring your web services remain responsive under load.
 
 ## 🏗️ Why async-cassandra?
 
@@ -63,7 +63,7 @@ This wrapper makes the cassandra-driver compatible with async Python application
 **What it DOESN'T do**:
 - ❌ Make the underlying I/O truly asynchronous (still uses threads)
 - ❌ Provide performance improvements over the sync driver
-- ❌ Remove thread pool limitations (concurrency still bounded by driver's thread pool size)
+- ❌ Remove thread pool limitations (concurrency still bounded by driver's [thread pool size](docs/thread-pool-configuration.md))
 - ❌ Eliminate thread overhead
 
 The cassandra-driver uses blocking sockets and thread pools internally. This wrapper provides a compatibility layer but cannot change the fundamental architecture. For a detailed technical analysis, see our [Why Async Wrapper](docs/why-async-wrapper.md#what-this-wrapper-actually-solves-and-what-it-doesnt) documentation.
@@ -152,6 +152,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ### Advanced Topics
 - [Connection Pooling Guide](docs/connection-pooling.md) - Understanding Python driver limitations
+- [Thread Pool Configuration](docs/thread-pool-configuration.md) - Tuning the driver's executor
 - [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
 - [Streaming Large Result Sets](docs/streaming.md) - Efficiently handle large datasets
 - [Retry Policies](docs/retry-policies.md) - Why we have our own retry policy

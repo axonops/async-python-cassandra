@@ -20,6 +20,7 @@ from cassandra.query import BatchStatement, BatchType
 from async_cassandra import AsyncCassandraSession, AsyncCluster, StreamConfig
 
 
+@pytest.mark.integration
 @pytest.mark.stress
 class TestStressScenarios:
     """Stress test scenarios for async-cassandra."""

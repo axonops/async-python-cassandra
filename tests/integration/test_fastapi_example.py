@@ -1,27 +1,55 @@
 """
 Integration tests for FastAPI example application.
-These tests ensure the example application continues to work correctly.
 """
 
-import asyncio
-import sys
 import uuid
-from pathlib import Path
-from typing import AsyncGenerator
-
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+import asyncio
+from typing import AsyncGenerator
+from httpx import AsyncClient
 
-# Add examples directory to Python path
+from fastapi.testclient import TestClient
+
+import sys
+from pathlib import Path
+
+# Add the FastAPI app directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "examples" / "fastapi_app"))
-
 from main import app
 
 
+@pytest.fixture(scope="session")
+def cassandra_service():
+    """Use existing Cassandra service for tests."""
+    # Cassandra should already be running on localhost:9042
+    # Check if it's available
+    import socket
+    import time
+    
+    max_attempts = 10
+    for i in range(max_attempts):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('localhost', 9042))
+            sock.close()
+            if result == 0:
+                yield True
+                return
+        except:
+            pass
+        time.sleep(1)
+    
+    raise RuntimeError("Cassandra is not available on localhost:9042")
+
+
 @pytest_asyncio.fixture
-async def fastapi_client(cassandra_session) -> AsyncGenerator[AsyncClient, None]:
-    """Create async HTTP client for FastAPI tests."""
+async def client() -> AsyncGenerator[AsyncClient, None]:
+    """Create async HTTP client for tests."""
+    from httpx import AsyncClient, ASGITransport
+    from main import app
+    
     # Initialize the app lifespan context
     async with app.router.lifespan_context(app):
         # Use ASGI transport to test the app directly
@@ -30,13 +58,13 @@ async def fastapi_client(cassandra_session) -> AsyncGenerator[AsyncClient, None]
 
 
 @pytest.mark.integration
-class TestFastAPIHealth:
+class TestHealthEndpoint:
     """Test health check endpoint."""
 
     @pytest.mark.asyncio
-    async def test_health_check(self, fastapi_client: AsyncClient):
+    async def test_health_check(self, client: AsyncClient, cassandra_service):
         """Test health check returns healthy status."""
-        response = await fastapi_client.get("/health")
+        response = await client.get("/health")
 
         assert response.status_code == 200
         data = response.json()
@@ -46,16 +74,16 @@ class TestFastAPIHealth:
         assert "timestamp" in data
 
 
-@pytest.mark.integration
-class TestFastAPIUserCRUD:
+@pytest.mark.integration  
+class TestUserCRUD:
     """Test user CRUD operations."""
 
     @pytest.mark.asyncio
-    async def test_create_user(self, fastapi_client: AsyncClient):
+    async def test_create_user(self, client: AsyncClient, cassandra_service):
         """Test creating a new user."""
         user_data = {"name": "John Doe", "email": "john@example.com", "age": 30}
 
-        response = await fastapi_client.post("/users", json=user_data)
+        response = await client.post("/users", json=user_data)
 
         assert response.status_code == 201
         data = response.json()
@@ -68,17 +96,17 @@ class TestFastAPIUserCRUD:
         assert "updated_at" in data
 
     @pytest.mark.asyncio
-    async def test_get_user(self, fastapi_client: AsyncClient):
+    async def test_get_user(self, client: AsyncClient, cassandra_service):
         """Test getting user by ID."""
         # First create a user
         user_data = {"name": "Jane Doe", "email": "jane@example.com", "age": 25}
 
-        create_response = await fastapi_client.post("/users", json=user_data)
+        create_response = await client.post("/users", json=user_data)
         created_user = create_response.json()
         user_id = created_user["id"]
 
         # Get the user
-        response = await fastapi_client.get(f"/users/{user_id}")
+        response = await client.get(f"/users/{user_id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -89,39 +117,35 @@ class TestFastAPIUserCRUD:
         assert data["age"] == user_data["age"]
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_user(self, fastapi_client: AsyncClient):
+    async def test_get_nonexistent_user(self, client: AsyncClient, cassandra_service):
         """Test getting non-existent user returns 404."""
         fake_id = str(uuid.uuid4())
 
-        response = await fastapi_client.get(f"/users/{fake_id}")
+        response = await client.get(f"/users/{fake_id}")
 
         assert response.status_code == 404
         assert "User not found" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_invalid_user_id_format(self, fastapi_client: AsyncClient):
+    async def test_invalid_user_id_format(self, client: AsyncClient, cassandra_service):
         """Test invalid user ID format returns 400."""
-        response = await fastapi_client.get("/users/invalid-uuid")
+        response = await client.get("/users/invalid-uuid")
 
         assert response.status_code == 400
         assert "Invalid user ID format" in response.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_list_users(self, fastapi_client: AsyncClient):
+    async def test_list_users(self, client: AsyncClient, cassandra_service):
         """Test listing users."""
         # Create multiple users
         users = []
         for i in range(5):
-            user_data = {
-                "name": f"User {i}",
-                "email": f"user{i}@example.com",
-                "age": 20 + i,
-            }
-            response = await fastapi_client.post("/users", json=user_data)
+            user_data = {"name": f"User {i}", "email": f"user{i}@example.com", "age": 20 + i}
+            response = await client.post("/users", json=user_data)
             users.append(response.json())
 
         # List users
-        response = await fastapi_client.get("/users?limit=10")
+        response = await client.get("/users?limit=10")
 
         assert response.status_code == 200
         data = response.json()
@@ -130,18 +154,18 @@ class TestFastAPIUserCRUD:
         assert len(data) >= 5  # At least the users we created
 
     @pytest.mark.asyncio
-    async def test_update_user(self, fastapi_client: AsyncClient):
+    async def test_update_user(self, client: AsyncClient, cassandra_service):
         """Test updating user."""
         # Create a user
         user_data = {"name": "Update Test", "email": "update@example.com", "age": 30}
 
-        create_response = await fastapi_client.post("/users", json=user_data)
+        create_response = await client.post("/users", json=user_data)
         user_id = create_response.json()["id"]
 
         # Update the user
         update_data = {"name": "Updated Name", "age": 31}
 
-        response = await fastapi_client.put(f"/users/{user_id}", json=update_data)
+        response = await client.put(f"/users/{user_id}", json=update_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -153,22 +177,18 @@ class TestFastAPIUserCRUD:
         assert data["updated_at"] > data["created_at"]
 
     @pytest.mark.asyncio
-    async def test_partial_update(self, fastapi_client: AsyncClient):
+    async def test_partial_update(self, client: AsyncClient, cassandra_service):
         """Test partial update of user."""
         # Create a user
-        user_data = {
-            "name": "Partial Update",
-            "email": "partial@example.com",
-            "age": 25,
-        }
+        user_data = {"name": "Partial Update", "email": "partial@example.com", "age": 25}
 
-        create_response = await fastapi_client.post("/users", json=user_data)
+        create_response = await client.post("/users", json=user_data)
         user_id = create_response.json()["id"]
 
         # Update only email
         update_data = {"email": "newemail@example.com"}
 
-        response = await fastapi_client.put(f"/users/{user_id}", json=update_data)
+        response = await client.put(f"/users/{user_id}", json=update_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -178,32 +198,32 @@ class TestFastAPIUserCRUD:
         assert data["age"] == user_data["age"]  # Unchanged
 
     @pytest.mark.asyncio
-    async def test_delete_user(self, fastapi_client: AsyncClient):
+    async def test_delete_user(self, client: AsyncClient, cassandra_service):
         """Test deleting user."""
         # Create a user
         user_data = {"name": "Delete Test", "email": "delete@example.com", "age": 35}
 
-        create_response = await fastapi_client.post("/users", json=user_data)
+        create_response = await client.post("/users", json=user_data)
         user_id = create_response.json()["id"]
 
         # Delete the user
-        response = await fastapi_client.delete(f"/users/{user_id}")
+        response = await client.delete(f"/users/{user_id}")
 
         assert response.status_code == 204
 
         # Verify user is deleted
-        get_response = await fastapi_client.get(f"/users/{user_id}")
+        get_response = await client.get(f"/users/{user_id}")
         assert get_response.status_code == 404
 
 
 @pytest.mark.integration
-class TestFastAPIPerformance:
+class TestPerformance:
     """Test performance endpoints."""
 
     @pytest.mark.asyncio
-    async def test_async_performance(self, fastapi_client: AsyncClient):
+    async def test_async_performance(self, client: AsyncClient, cassandra_service):
         """Test async performance endpoint."""
-        response = await fastapi_client.get("/performance/async?requests=10")
+        response = await client.get("/performance/async?requests=10")
 
         assert response.status_code == 200
         data = response.json()
@@ -214,9 +234,9 @@ class TestFastAPIPerformance:
         assert data["requests_per_second"] > 0
 
     @pytest.mark.asyncio
-    async def test_sync_performance(self, fastapi_client: AsyncClient):
+    async def test_sync_performance(self, client: AsyncClient, cassandra_service):
         """Test sync performance endpoint."""
-        response = await fastapi_client.get("/performance/sync?requests=10")
+        response = await client.get("/performance/sync?requests=10")
 
         assert response.status_code == 200
         data = response.json()
@@ -227,14 +247,14 @@ class TestFastAPIPerformance:
         assert data["requests_per_second"] > 0
 
     @pytest.mark.asyncio
-    async def test_performance_comparison(self, fastapi_client: AsyncClient):
+    async def test_performance_comparison(self, client: AsyncClient, cassandra_service):
         """Test that async is faster than sync for concurrent operations."""
         # Run async test
-        async_response = await fastapi_client.get("/performance/async?requests=50")
+        async_response = await client.get("/performance/async?requests=50")
         async_data = async_response.json()
 
         # Run sync test
-        sync_response = await fastapi_client.get("/performance/sync?requests=50")
+        sync_response = await client.get("/performance/sync?requests=50")
         sync_data = sync_response.json()
 
         # Async should be significantly faster
@@ -242,11 +262,11 @@ class TestFastAPIPerformance:
 
 
 @pytest.mark.integration
-class TestFastAPIConcurrency:
+class TestConcurrency:
     """Test concurrent operations."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_user_creation(self, fastapi_client: AsyncClient):
+    async def test_concurrent_user_creation(self, client: AsyncClient, cassandra_service):
         """Test creating multiple users concurrently."""
 
         async def create_user(i: int):
@@ -255,7 +275,7 @@ class TestFastAPIConcurrency:
                 "email": f"concurrent{i}@example.com",
                 "age": 20 + i,
             }
-            response = await fastapi_client.post("/users", json=user_data)
+            response = await client.post("/users", json=user_data)
             return response.json()
 
         # Create 20 users concurrently
@@ -268,24 +288,20 @@ class TestFastAPIConcurrency:
         assert len(set(user_ids)) == 20
 
     @pytest.mark.asyncio
-    async def test_concurrent_read_write(self, fastapi_client: AsyncClient):
+    async def test_concurrent_read_write(self, client: AsyncClient, cassandra_service):
         """Test concurrent read and write operations."""
         # Create initial user
-        user_data = {
-            "name": "Concurrent Test",
-            "email": "concurrent@example.com",
-            "age": 30,
-        }
+        user_data = {"name": "Concurrent Test", "email": "concurrent@example.com", "age": 30}
 
-        create_response = await fastapi_client.post("/users", json=user_data)
+        create_response = await client.post("/users", json=user_data)
         user_id = create_response.json()["id"]
 
         async def read_user():
-            response = await fastapi_client.get(f"/users/{user_id}")
+            response = await client.get(f"/users/{user_id}")
             return response.json()
 
         async def update_user(age: int):
-            response = await fastapi_client.put(f"/users/{user_id}", json={"age": age})
+            response = await client.put(f"/users/{user_id}", json={"age": age})
             return response.json()
 
         # Run mixed read/write operations concurrently
