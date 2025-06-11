@@ -27,8 +27,8 @@ sequenceDiagram
     participant Cassandra as Cassandra DB
     
     App->>Driver: execute("SELECT * FROM large_table")
-    Driver->>Cassandra: Request (fetch_size=5000)
-    Note over Cassandra: Reads 5000 rows
+    Driver->>Cassandra: Request (fetch_size=5000 = page size)
+    Note over Cassandra: Reads 5000 rows<br/>(one page)
     Cassandra-->>Driver: Page 1 (5000 rows) + has_more_pages=true
     Driver-->>App: ResultSet with Page 1
     
@@ -45,7 +45,7 @@ sequenceDiagram
 
 ### Key Concepts:
 
-1. **Fetch Size**: How many rows Cassandra returns in each "page" (default: 5000)
+1. **Fetch Size = Page Size**: The `fetch_size` parameter controls how many rows Cassandra returns in each "page" (default: 5000). This is the same as setting `statement.fetch_size` in the standard driver.
 2. **Page**: A batch of rows returned by Cassandra
 3. **Paging State**: A token that tells Cassandra where to continue reading
 
@@ -97,9 +97,9 @@ from cassandra.cluster import Cluster
 cluster = Cluster(['localhost'])
 session = cluster.connect()
 
-# Set fetch size
+# Set fetch size (page size)
 statement = SimpleStatement("SELECT * FROM billion_row_table")
-statement.fetch_size = 1000
+statement.fetch_size = 1000  # Each page will have 1000 rows
 
 # Execute and get first page
 result = session.execute(statement)
@@ -200,7 +200,7 @@ async def process_large_table():
     
     # Configure streaming
     config = StreamConfig(
-        fetch_size=1000  # Cassandra will return 1000 rows per page
+        fetch_size=1000  # Same as statement.fetch_size - sets page size to 1000 rows
     )
     
     # Start streaming query
@@ -235,20 +235,24 @@ async def process_large_table():
 
 ## Understanding Fetch Size
 
-The `fetch_size` parameter is crucial for performance:
+The `fetch_size` parameter in `StreamConfig` is exactly the same as the `fetch_size` on Cassandra statements - it controls the page size. This parameter is crucial for performance:
 
 ```python
 # Small fetch_size = More network requests, less memory
 config_small = StreamConfig(fetch_size=100)  
-# - Fetches 100 rows at a time
+# - Fetches 100 rows at a time (page size = 100)
 # - Good for: Large rows, limited memory
 # - Bad for: Network latency, small rows
 
 # Large fetch_size = Fewer network requests, more memory  
 config_large = StreamConfig(fetch_size=10000)
-# - Fetches 10,000 rows at a time
+# - Fetches 10,000 rows at a time (page size = 10,000)
 # - Good for: Small rows, good network
 # - Bad for: Large rows, limited memory
+
+# This is equivalent to:
+# statement = SimpleStatement("SELECT * FROM table")
+# statement.fetch_size = 10000
 
 # How to choose?
 row_size_bytes = 1024  # Estimate your average row size
