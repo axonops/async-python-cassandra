@@ -81,12 +81,13 @@ The cassandra-driver uses blocking sockets and thread pools internally. This wra
 
 ## 🔀 Alternative Libraries
 
-Several other async Cassandra drivers exist for Python:
+Several other async Cassandra drivers exist for Python, each with different design approaches:
 
-- **[ScyllaPy](https://github.com/Intreecom/scyllapy)**: Rust-based driver with Python bindings offering native async I/O
-- **[Acsylla](https://github.com/acsylla/acsylla)**: C++ driver wrapper with true async capabilities and ScyllaDB optimizations
+- **[ScyllaPy](https://github.com/Intreecom/scyllapy)**: Rust-based driver with Python bindings
+- **[Acsylla](https://github.com/acsylla/acsylla)**: C++ driver wrapper using Cython
+- **[DataStax AsyncioReactor](https://github.com/datastax/python-driver)**: Experimental asyncio support in the official driver
 
-See our [detailed comparison guide](docs/alternatives-comparison.md) to understand the trade-offs and choose the best solution for your use case.
+See our [comparison guide](docs/alternatives-comparison.md) for technical differences between these libraries.
 
 
 ## 📋 Requirements

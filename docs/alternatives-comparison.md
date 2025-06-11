@@ -2,131 +2,94 @@
 
 ## Overview
 
-The Python ecosystem offers several approaches to async Cassandra connectivity. This document provides an objective comparison of available options, including async-python-cassandra and its alternatives.
+The Python ecosystem offers several approaches to async Cassandra connectivity. This document provides a comparison of available options to help you make an informed decision based on your specific requirements.
 
 ## Available Solutions
 
 ### 1. async-python-cassandra (This Library)
 
-**Architecture**: Pure Python wrapper around the DataStax Python driver
-**Language**: Python
+**Project**: [https://github.com/axonops/async-python-cassandra](https://github.com/axonops/async-python-cassandra)  
+**Architecture**: Pure Python wrapper around the DataStax Python driver  
+**Language**: Python  
 **Dependencies**: cassandra-driver
 
-**Strengths:**
+**Key Characteristics:**
 - Zero additional system dependencies
 - Maintains 100% compatibility with existing DataStax driver code
 - Easy migration path from sync to async code
 - Stable, mature underlying driver
 - No compilation or binary dependencies
 
-**Limitations:**
+**Technical Approach:**
 - Uses thread pool for I/O (not native async)
-- No performance improvement over sync driver for single operations
-- Thread pool constraints limit extreme concurrency
-
-**Best For:**
-- FastAPI/async web applications that need Cassandra integration
-- Projects already using DataStax driver wanting async syntax
-- Environments where binary dependencies are problematic
-- Applications prioritizing stability and compatibility
+- Bridges cassandra-driver futures to asyncio futures
+- Maintains thread-based connection architecture
 
 ### 2. ScyllaPy
 
-**Architecture**: Rust-based driver with Python bindings
-**Language**: Rust core with Python interface
-**Dependencies**: Requires Rust runtime components
+**Project**: [https://github.com/Intreecom/scyllapy](https://github.com/Intreecom/scyllapy)  
+**Architecture**: Rust-based driver with Python bindings  
+**Language**: Rust core with Python interface  
+**Dependencies**: Pre-compiled wheels or Rust toolchain for source builds
 
-**Strengths:**
-- Native async implementation without thread limitations
-- High performance for bulk operations
-- Modern Rust-based architecture
-- Built-in query builder
-- Benchmarks show performance advantages for certain workloads
+**Key Characteristics:**
+- Native async implementation
+- Built on Rust's tokio async runtime
+- Includes query builder functionality
+- Supports Cassandra, ScyllaDB, and AWS Keyspaces
 
-**Limitations:**
-- Requires compilation/binary dependencies
-- Less mature than DataStax driver
-- May have compatibility issues with some Cassandra features
-- Smaller community and ecosystem
-
-**Best For:**
-- New projects prioritizing raw performance
-- Bulk data processing applications
-- ScyllaDB-specific deployments
+**Technical Approach:**
+- Uses Rust's async I/O primitives
+- PyO3 bindings for Python integration
+- Native protocol implementation
 
 ### 3. Acsylla
 
-**Architecture**: C++ driver (cpp-driver) with Python bindings
-**Language**: C++ core with Cython wrapper
-**Dependencies**: Requires C++ runtime and cpp-driver
+**Project**: [https://github.com/acsylla/acsylla](https://github.com/acsylla/acsylla)  
+**Architecture**: C++ driver (cpp-driver) with Python bindings  
+**Language**: C++ core with Cython wrapper  
+**Dependencies**: Requires cassandra-cpp-driver
 
-**Strengths:**
-- True native async I/O
-- Mature C++ driver foundation
-- Shard-aware for ScyllaDB optimizations
-- Good performance characteristics
-- Comprehensive feature set
+**Key Characteristics:**
+- Based on DataStax C++ driver
+- Supports shard-aware routing for ScyllaDB
+- Comprehensive protocol support
+- Available for Linux and macOS
 
-**Limitations:**
-- Complex installation (C++ dependencies)
-- Platform-specific binaries needed
-- Harder to debug Python/C++ boundary issues
-- Limited to Linux and macOS
-
-**Best For:**
-- Production systems requiring maximum performance
-- ScyllaDB deployments needing shard awareness
-- Linux-based production environments
+**Technical Approach:**
+- Uses libuv for async I/O
+- Cython bindings for Python integration
+- Leverages mature C++ driver codebase
 
 ### 4. DataStax AsyncioReactor (Experimental)
 
-**Architecture**: Experimental asyncio integration in official driver
-**Language**: Python
+**Project**: Part of [python-driver](https://github.com/datastax/python-driver)  
+**Architecture**: Experimental asyncio integration in official driver  
+**Language**: Python  
 **Dependencies**: cassandra-driver
 
-**Strengths:**
-- Part of official driver
+**Key Characteristics:**
+- Integrated into official DataStax Python driver
 - Pure Python implementation
-- Direct DataStax support
+- Marked as experimental/not production ready
 
-**Limitations:**
-- Marked as experimental
-- Limited documentation
-- Not recommended for production
-- Uncertain future development
+**Technical Approach:**
+- Replaces default reactor with asyncio-based implementation
+- Still uses thread-based architecture internally
 
-**Best For:**
-- Experimental/research projects
-- Testing async patterns
+## Technical Comparison
 
-## Detailed Comparison
+### Architecture Comparison
 
-### Performance Characteristics
+| Aspect | async-python-cassandra | ScyllaPy | Acsylla | DataStax AsyncioReactor |
+|--------|------------------------|----------|---------|-------------------------|
+| I/O Model | Thread pool | Native async | Native async | Thread pool |
+| Language Core | Python | Rust | C++ | Python |
+| Binary Dependencies | None | Optional* | Required | None |
+| Platform Support | All Python platforms | Windows/Linux/macOS | Linux/macOS | All Python platforms |
+| Protocol Implementation | Via cassandra-driver | Native | Via cpp-driver | Via cassandra-driver |
 
-| Driver | Single Query | Bulk Operations | Memory Usage | Startup Time |
-|--------|--------------|-----------------|--------------|--------------|
-| async-python-cassandra | Baseline | Baseline | Low | Fast |
-| ScyllaPy | Similar | 20-30% faster | Medium | Medium |
-| Acsylla | Similar | 15-25% faster | Medium | Slow |
-| DataStax Sync | Baseline | Baseline | Low | Fast |
-
-*Note: Performance varies significantly based on workload patterns*
-
-### Feature Compatibility
-
-| Feature | async-python-cassandra | ScyllaPy | Acsylla |
-|---------|------------------------|----------|---------|
-| Prepared Statements | ✅ Full | ✅ Full | ✅ Full |
-| Batch Statements | ✅ Full | ✅ Full | ✅ Full |
-| UDTs | ✅ Full | ⚠️ Partial | ✅ Full |
-| Materialized Views | ✅ Full | ✅ Full | ✅ Full |
-| LWT | ✅ Full | ✅ Full | ✅ Full |
-| Custom Types | ✅ Full | ❌ Limited | ⚠️ Partial |
-| All Consistency Levels | ✅ Full | ✅ Full | ✅ Full |
-| Connection Pooling | ✅ Full | ✅ Full | ✅ Full |
-| Load Balancing Policies | ✅ Full | ⚠️ Partial | ✅ Full |
-| Retry Policies | ✅ Full | ⚠️ Basic | ✅ Full |
-| Metrics/Monitoring | ✅ Full | ⚠️ Basic | ⚠️ Partial |
+*Pre-built wheels available for common platforms
 
 ### Installation Complexity
 
@@ -151,33 +114,19 @@ brew install cassandra-cpp-driver      # macOS
 pip install acsylla
 ```
 
-## Decision Matrix
+## Key Differences
 
-### When to Use async-python-cassandra
+### Async Implementation Approaches
 
-✅ **Choose this library when:**
-- You need async syntax in FastAPI/aiohttp applications
-- You're already using DataStax Python driver
-- You require 100% feature compatibility with Cassandra
-- You want minimal deployment complexity
-- You need extensive documentation and community support
-- Binary dependencies are problematic in your environment
+**Thread Pool Based (async-python-cassandra, DataStax AsyncioReactor):**
+- Wraps synchronous operations in thread pool executors
+- Provides async/await syntax while maintaining thread-based I/O
+- Compatible with all existing cassandra-driver features
 
-### When to Consider Alternatives
-
-**Choose ScyllaPy when:**
-- Starting a new project with no legacy constraints
-- Bulk data processing is the primary use case
-- Performance is more critical than compatibility
-- Using ScyllaDB-specific features
-- Comfortable with Rust ecosystem dependencies
-
-**Choose Acsylla when:**
-- Maximum performance is critical
-- Using ScyllaDB with shard-aware requirements
-- Linux-only deployment is acceptable
-- Have C++ expertise on team
-- Need specific cpp-driver features
+**Native Async (ScyllaPy, Acsylla):**
+- Implements protocol directly with async I/O primitives
+- No thread pool overhead for I/O operations
+- May have different feature sets from cassandra-driver
 
 ## Migration Considerations
 
@@ -203,44 +152,26 @@ result = await session.execute("SELECT * FROM users")
 
 **Migration effort: Significant** - Different APIs, potential feature gaps
 
-## Performance Reality Check
+## Additional Considerations
 
-While benchmarks often show ScyllaPy and Acsylla outperforming thread-based solutions, real-world benefits depend heavily on:
+### Ecosystem and Community
 
-1. **Workload patterns**: Single queries show minimal difference
-2. **Concurrency levels**: Benefits emerge at high concurrency
-3. **Network latency**: Often dominates over driver overhead
-4. **Application architecture**: Overall design matters more than driver choice
+- **async-python-cassandra**: Leverages the mature DataStax driver ecosystem
+- **ScyllaPy**: Growing community, active development
+- **Acsylla**: Established project with ScyllaDB focus
+- **DataStax AsyncioReactor**: Part of official driver but experimental status
 
-## Recommendations
+### Documentation and Support
 
-### For Web Applications (FastAPI/Django/aiohttp)
-**Recommended: async-python-cassandra**
-- Easiest integration
-- Familiar API
-- Stable and well-tested
-- No binary dependencies
+Each project maintains its own documentation. Refer to the project repositories linked above for:
+- Installation guides
+- API documentation
+- Example code
+- Issue tracking
 
-### For Data Processing Pipelines
-**Consider: ScyllaPy or Acsylla**
-- Better bulk operation performance
-- Native async may help with very high concurrency
+### Compatibility Notes
 
-### For Existing DataStax Driver Users
-**Recommended: async-python-cassandra**
-- Minimal code changes
-- Preserves all existing functionality
-- Same operational characteristics
-
-### For ScyllaDB-Specific Features
-**Recommended: Acsylla**
-- Shard-aware routing
-- ScyllaDB optimizations
-
-## Conclusion
-
-The choice of async Cassandra driver depends more on your specific requirements than raw performance benchmarks. async-python-cassandra offers the best balance of compatibility, stability, and ease of use for most applications. The performance trade-offs are acceptable for typical web application workloads where network latency dominates.
-
-For specialized use cases requiring absolute maximum performance or specific ScyllaDB features, Acsylla and ScyllaPy provide viable alternatives, albeit with increased complexity and potential compatibility challenges.
-
-Remember: The driver is rarely the bottleneck in real applications. Focus on proper data modeling, query optimization, and application architecture before optimizing driver selection.
+- All libraries support basic Cassandra operations (queries, prepared statements, etc.)
+- Feature parity varies for advanced functionality
+- Check individual project documentation for specific feature support
+- Protocol version support may differ between implementations

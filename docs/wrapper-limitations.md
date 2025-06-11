@@ -1,6 +1,6 @@
 # async-python-cassandra: What It Does and Doesn't Do
 
-> **Note**: If you need true native async I/O without the limitations described in this document, consider alternatives like [ScyllaPy](https://github.com/Intreecom/scyllapy) (Rust-based) or [Acsylla](https://github.com/acsylla/acsylla) (C++ based). See our [alternatives comparison](alternatives-comparison.md) for details.
+> **Note**: Other async Cassandra drivers implement native async I/O using different approaches. See our [alternatives comparison](alternatives-comparison.md) for technical details about [ScyllaPy](https://github.com/Intreecom/scyllapy), [Acsylla](https://github.com/acsylla/acsylla), and other options.
 
 ## What This Wrapper Actually Does
 
