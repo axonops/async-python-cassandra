@@ -51,16 +51,19 @@ sequenceDiagram
 
 ## The Memory Problem
 
-With regular `execute()`, the driver automatically fetches ALL pages into memory:
+When using ANY Cassandra driver (sync or async), the `execute()` method automatically fetches ALL pages into memory:
 
 ```python
-# DON'T DO THIS with large tables!
-# (Using async-cassandra's execute method here, but the same problem
-#  exists with the sync driver's execute method)
-result = await session.execute("SELECT * FROM billion_row_table")
+# With the standard cassandra-driver (sync):
+result = session.execute("SELECT * FROM billion_row_table")
 # The driver fetches ALL pages automatically behind the scenes
 # This could use gigabytes of memory!
 all_rows = result.all()  # Now you have a billion rows in memory 💥
+
+# With async-cassandra (async):
+result = await session.execute("SELECT * FROM billion_row_table")
+# SAME PROBLEM - driver fetches ALL pages automatically
+all_rows = result.all()  # Still have a billion rows in memory 💥
 ```
 
 Here's what happens behind the scenes:
@@ -71,7 +74,7 @@ sequenceDiagram
     participant Driver as Driver Memory
     participant Cassandra
     
-    App->>Driver: execute("SELECT * FROM billion_row_table")
+    App->>Driver: execute() or await execute()
     
     loop Until all pages fetched
         Driver->>Cassandra: Get page (5000 rows)
