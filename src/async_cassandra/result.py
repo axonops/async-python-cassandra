@@ -47,7 +47,9 @@ class AsyncResultHandler:
         Returns:
             AsyncResultSet containing all rows from the query.
         """
-        return await self._future
+        result = await self._future
+        assert isinstance(result, AsyncResultSet)
+        return result
 
 
 class AsyncResultSet:

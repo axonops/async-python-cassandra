@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from cassandra.cluster import Host
 from cassandra.query import SimpleStatement
@@ -75,7 +75,7 @@ class ConnectionMonitor:
             session: The async Cassandra session to monitor
         """
         self.session = session
-        self.metrics = {
+        self.metrics: Dict[str, Any] = {
             "requests_sent": 0,
             "requests_completed": 0,
             "requests_failed": 0,
@@ -292,7 +292,7 @@ class RateLimitedSession:
         self.semaphore = asyncio.Semaphore(max_concurrent)
         self.metrics = {"total_requests": 0, "active_requests": 0, "rejected_requests": 0}
 
-    async def execute(self, query, parameters=None, **kwargs):
+    async def execute(self, query: Any, parameters: Any = None, **kwargs: Any) -> Any:
         """Execute a query with rate limiting."""
         async with self.semaphore:
             self.metrics["total_requests"] += 1
@@ -303,7 +303,7 @@ class RateLimitedSession:
             finally:
                 self.metrics["active_requests"] -= 1
 
-    async def prepare(self, query):
+    async def prepare(self, query: str) -> Any:
         """Prepare a statement (not rate limited)."""
         return await self.session.prepare(query)
 
@@ -317,7 +317,7 @@ async def create_monitored_session(
     keyspace: Optional[str] = None,
     max_concurrent: Optional[int] = None,
     warmup: bool = True,
-) -> tuple[RateLimitedSession, ConnectionMonitor]:
+) -> Tuple[Union[RateLimitedSession, AsyncCassandraSession], ConnectionMonitor]:
     """
     Create a monitored and optionally rate-limited session.
 

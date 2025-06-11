@@ -7,7 +7,7 @@ across the library.
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Protocol, Tuple, Type, TypeVar
+from typing import Any, Callable, Literal, Optional, Protocol, Tuple, Type, TypeVar
 
 from .exceptions import ConnectionError
 
@@ -21,7 +21,7 @@ class AsyncCloseable(ABC):
     Provides idempotent close/shutdown functionality with proper locking.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._closed = False
         self._close_lock = asyncio.Lock()
 
@@ -99,14 +99,14 @@ class CloseableProtocol(Protocol):
         ...
 
 
-def check_not_closed(method):
+def check_not_closed(method: Callable) -> Callable:
     """
     Decorator to check if a resource is closed before executing a method.
 
     The decorated class must have a _check_not_closed() method.
     """
 
-    async def wrapper(self, *args, **kwargs):
+    async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         if hasattr(self, "_check_not_closed"):
             self._check_not_closed()
         return await method(self, *args, **kwargs)
@@ -147,7 +147,7 @@ class ExceptionHandler:
         self.wrapper_exception = wrapper_exception
         self.reraise_exceptions = reraise_exceptions or ()
 
-    def __enter__(self):
+    def __enter__(self) -> "ExceptionHandler":
         return self
 
     def __exit__(
@@ -155,7 +155,7 @@ class ExceptionHandler:
         exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException],
         exc_tb: Optional[Any],
-    ) -> Optional[bool]:
+    ) -> Literal[False]:
         if exc_type is None:
             return False
 
@@ -165,21 +165,14 @@ class ExceptionHandler:
 
         # Wrap other exceptions
         if not isinstance(exc_val, self.wrapper_exception):
-            # Try to create with cause parameter if supported
-            try:
-                wrapped = self.wrapper_exception(
-                    f"{self.error_message}: {str(exc_val)}", cause=exc_val
-                )
-            except TypeError:
-                # Fallback for exceptions that don't accept cause
-                wrapped = self.wrapper_exception(f"{self.error_message}: {str(exc_val)}")
+            wrapped = self.wrapper_exception(f"{self.error_message}: {str(exc_val)}")
             # Always properly chain the exception
             wrapped.__cause__ = exc_val
             raise wrapped
 
         return False
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "ExceptionHandler":
         return self
 
     async def __aexit__(
@@ -187,6 +180,6 @@ class ExceptionHandler:
         exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException],
         exc_tb: Optional[Any],
-    ) -> Optional[bool]:
+    ) -> Literal[False]:
         # Reuse sync implementation
         return self.__exit__(exc_type, exc_val, exc_tb)

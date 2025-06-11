@@ -15,7 +15,10 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from prometheus_client import Counter, Gauge, Histogram
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +134,12 @@ class InMemoryMetricsCollector(MetricsCollector):
                     },
                 }
             else:
-                stats = {"message": "No recent queries"}
+                stats = {
+                    "query_performance": {"message": "No recent queries"},
+                    "error_summary": dict(self.error_counts),
+                    "top_queries": {},
+                    "connection_health": {},
+                }
 
             return stats
 
@@ -139,7 +147,13 @@ class InMemoryMetricsCollector(MetricsCollector):
 class PrometheusMetricsCollector(MetricsCollector):
     """Prometheus metrics collector for production monitoring."""
 
-    def __init__(self):
+    query_duration: Optional["Histogram"]
+    query_total: Optional["Counter"]
+    connection_health: Optional["Gauge"]
+    error_total: Optional["Counter"]
+    _available: bool
+
+    def __init__(self) -> None:
         try:
             from prometheus_client import Counter, Gauge, Histogram
 
@@ -172,13 +186,15 @@ class PrometheusMetricsCollector(MetricsCollector):
         query_type = "prepared" if "prepared" in metrics.query_hash else "simple"
         success_label = "success" if metrics.success else "failure"
 
-        self.query_duration.labels(query_type=query_type, success=success_label).observe(
-            metrics.duration
-        )
+        if self.query_duration is not None:
+            self.query_duration.labels(query_type=query_type, success=success_label).observe(
+                metrics.duration
+            )
 
-        self.query_total.labels(query_type=query_type, success=success_label).inc()
+        if self.query_total is not None:
+            self.query_total.labels(query_type=query_type, success=success_label).inc()
 
-        if not metrics.success and metrics.error_type:
+        if not metrics.success and metrics.error_type and self.error_total is not None:
             self.error_total.labels(error_type=metrics.error_type).inc()
 
     async def record_connection_health(self, metrics: ConnectionMetrics) -> None:
@@ -186,7 +202,8 @@ class PrometheusMetricsCollector(MetricsCollector):
         if not self._available:
             return
 
-        self.connection_health.labels(host=metrics.host).set(1 if metrics.is_healthy else 0)
+        if self.connection_health is not None:
+            self.connection_health.labels(host=metrics.host).set(1 if metrics.is_healthy else 0)
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get current Prometheus metrics."""
@@ -203,11 +220,11 @@ class MetricsMiddleware:
         self.collectors = collectors
         self._enabled = True
 
-    def enable(self):
+    def enable(self) -> None:
         """Enable metrics collection."""
         self._enabled = True
 
-    def disable(self):
+    def disable(self) -> None:
         """Disable metrics collection."""
         self._enabled = False
 
@@ -219,7 +236,7 @@ class MetricsMiddleware:
         error_type: Optional[str] = None,
         parameters_count: int = 0,
         result_size: int = 0,
-    ):
+    ) -> None:
         """Record metrics for a query execution."""
         if not self._enabled:
             return
@@ -250,7 +267,7 @@ class MetricsMiddleware:
         response_time: float,
         error_count: int = 0,
         total_queries: int = 0,
-    ):
+    ) -> None:
         """Record connection health metrics."""
         if not self._enabled:
             return
@@ -288,11 +305,11 @@ class MetricsMiddleware:
 
 
 # Decorators for easy metrics integration
-def with_metrics(middleware: MetricsMiddleware):
+def with_metrics(middleware: MetricsMiddleware) -> Callable:
     """Decorator to add metrics to async functions."""
 
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
+    def decorator(func: Callable) -> Callable:
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.perf_counter()
             success = False
             error_type = None
@@ -322,7 +339,7 @@ def create_metrics_system(
     backend: str = "memory", prometheus_enabled: bool = False
 ) -> MetricsMiddleware:
     """Create a metrics system with specified backend."""
-    collectors = []
+    collectors: List[MetricsCollector] = []
 
     if backend == "memory":
         collectors.append(InMemoryMetricsCollector())

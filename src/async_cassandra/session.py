@@ -307,7 +307,8 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
     @property
     def keyspace(self) -> Optional[str]:
         """Get current keyspace."""
-        return self._session.keyspace
+        keyspace = self._session.keyspace
+        return keyspace if isinstance(keyspace, str) else None
 
     async def set_keyspace(self, keyspace: str) -> None:
         """

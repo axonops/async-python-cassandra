@@ -131,7 +131,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
         """
         auth_provider = PlainTextAuthProvider(username=username, password=password)
 
-        return cls(contact_points=contact_points, auth_provider=auth_provider, **kwargs)
+        return cls(contact_points=contact_points, auth_provider=auth_provider, **kwargs)  # type: ignore[arg-type]
 
     @check_not_closed
     async def connect(self, keyspace: Optional[str] = None) -> AsyncCassandraSession:

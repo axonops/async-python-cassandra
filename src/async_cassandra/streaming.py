@@ -58,11 +58,11 @@ class AsyncStreamingResultSet:
         # Start fetching the first page
         self._setup_callbacks()
 
-    def _setup_callbacks(self):
+    def _setup_callbacks(self) -> None:
         """Set up callbacks for the current page."""
         self.response_future.add_callbacks(callback=self._handle_page, errback=self._handle_error)
 
-    def _handle_page(self, rows: List[Any]) -> None:
+    def _handle_page(self, rows: Optional[List[Any]]) -> None:
         """Handle successful page retrieval."""
         if rows is not None:
             self._current_page = rows
@@ -238,7 +238,9 @@ class StreamingResultHandler:
         Returns:
             AsyncStreamingResultSet for efficient iteration.
         """
-        return await self._initial_future
+        result = await self._initial_future
+        assert isinstance(result, AsyncStreamingResultSet)
+        return result
 
 
 def create_streaming_statement(
