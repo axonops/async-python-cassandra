@@ -77,37 +77,41 @@ class TestConstants:
         # This is more of a convention test - Python doesn't have true constants
         # But we can verify the module defines them properly
         import async_cassandra.constants as constants_module
-        
+
         # Verify all constants are uppercase (Python convention)
         for attr_name in dir(constants_module):
-            if not attr_name.startswith('_'):
+            if not attr_name.startswith("_"):
                 attr_value = getattr(constants_module, attr_name)
                 if isinstance(attr_value, (int, float, str)):
                     assert attr_name.isupper(), f"Constant {attr_name} should be uppercase"
 
-    @pytest.mark.parametrize("constant_name,min_value,max_value", [
-        ("DEFAULT_FETCH_SIZE", 1, 50000),
-        ("DEFAULT_EXECUTOR_THREADS", 1, 32),
-        ("DEFAULT_CONNECTION_TIMEOUT", 1.0, 60.0),
-        ("DEFAULT_REQUEST_TIMEOUT", 10.0, 600.0),
-        ("MAX_CONCURRENT_QUERIES", 10, 10000),
-        ("MAX_RETRY_ATTEMPTS", 1, 20),
-        ("MIN_EXECUTOR_THREADS", 1, 4),
-        ("MAX_EXECUTOR_THREADS", 32, 256),
-    ])
+    @pytest.mark.parametrize(
+        "constant_name,min_value,max_value",
+        [
+            ("DEFAULT_FETCH_SIZE", 1, 50000),
+            ("DEFAULT_EXECUTOR_THREADS", 1, 32),
+            ("DEFAULT_CONNECTION_TIMEOUT", 1.0, 60.0),
+            ("DEFAULT_REQUEST_TIMEOUT", 10.0, 600.0),
+            ("MAX_CONCURRENT_QUERIES", 10, 10000),
+            ("MAX_RETRY_ATTEMPTS", 1, 20),
+            ("MIN_EXECUTOR_THREADS", 1, 4),
+            ("MAX_EXECUTOR_THREADS", 32, 256),
+        ],
+    )
     def test_constant_ranges(self, constant_name, min_value, max_value):
         """Test that constants are within expected ranges."""
         import async_cassandra.constants as constants_module
+
         value = getattr(constants_module, constant_name)
-        assert min_value <= value <= max_value, (
-            f"{constant_name} value {value} is outside expected range [{min_value}, {max_value}]"
-        )
+        assert (
+            min_value <= value <= max_value
+        ), f"{constant_name} value {value} is outside expected range [{min_value}, {max_value}]"
 
     def test_no_missing_constants(self):
         """Test that all expected constants are defined."""
         expected_constants = {
             "DEFAULT_FETCH_SIZE",
-            "DEFAULT_EXECUTOR_THREADS", 
+            "DEFAULT_EXECUTOR_THREADS",
             "DEFAULT_CONNECTION_TIMEOUT",
             "DEFAULT_REQUEST_TIMEOUT",
             "MAX_CONCURRENT_QUERIES",
@@ -115,16 +119,16 @@ class TestConstants:
             "MIN_EXECUTOR_THREADS",
             "MAX_EXECUTOR_THREADS",
         }
-        
+
         import async_cassandra.constants as constants_module
+
         module_constants = {
-            name for name in dir(constants_module)
-            if not name.startswith('_') and name.isupper()
+            name for name in dir(constants_module) if not name.startswith("_") and name.isupper()
         }
-        
+
         missing = expected_constants - module_constants
         assert not missing, f"Missing constants: {missing}"
-        
+
         # Also check no unexpected constants
         unexpected = module_constants - expected_constants
         assert not unexpected, f"Unexpected constants: {unexpected}"

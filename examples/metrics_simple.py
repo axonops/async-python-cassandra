@@ -8,6 +8,7 @@ This example shows basic metrics collection and monitoring.
 import asyncio
 import uuid
 from datetime import datetime
+
 from async_cassandra import AsyncCluster
 from async_cassandra.metrics import InMemoryMetricsCollector, create_metrics_system
 from async_cassandra.monitoring import ConnectionMonitor

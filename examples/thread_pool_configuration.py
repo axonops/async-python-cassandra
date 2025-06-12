@@ -7,7 +7,7 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 
-from async_cassandra import AsyncCluster, AsyncCassandraSession
+from async_cassandra import AsyncCassandraSession, AsyncCluster
 
 
 @asynccontextmanager
@@ -48,7 +48,7 @@ async def simulate_workload(
             await asyncio.sleep(delay)
 
     # Wait for all queries to complete
-    results = await asyncio.gather(*queries)
+    await asyncio.gather(*queries)
 
     elapsed = time.time() - start_time
     print(f"{name}: Completed {query_count} queries in {elapsed:.2f}s")
@@ -163,7 +163,7 @@ async def example_monitoring():
 
     print("\nMonitoring: Waiting for all tasks to complete...")
     for i, future in enumerate(futures):
-        result = future.result()
+        future.result()
         print(f"Monitoring: Task {i+1} completed")
 
     await session.close()
@@ -182,7 +182,7 @@ async def main():
         await test_session.close()
         await test_cluster.shutdown()
     except Exception as e:
-        print(f"\nError: Cannot connect to Cassandra on localhost:9042")
+        print("\nError: Cannot connect to Cassandra on localhost:9042")
         print(f"Details: {e}")
         print("\nPlease ensure Cassandra is running before running these examples.")
         return

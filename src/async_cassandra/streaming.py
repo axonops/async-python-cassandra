@@ -35,9 +35,9 @@ class AsyncStreamingResultSet:
 
     This class provides memory-efficient iteration over large result sets
     by fetching pages as needed rather than loading all results at once.
-    
+
     Can be used as an async context manager to ensure proper cleanup:
-    
+
         async with streaming_result as stream:
             async for row in stream:
                 process_row(row)
@@ -193,7 +193,7 @@ class AsyncStreamingResultSet:
 
         # Wait for the page to be ready
         assert self._page_ready is not None
-        
+
         # Use timeout from config if available
         if self.config.timeout_seconds:
             await asyncio.wait_for(self._page_ready.wait(), timeout=self.config.timeout_seconds)
@@ -235,7 +235,9 @@ class AsyncStreamingResultSet:
                 assert self._page_ready is not None
                 # Use timeout from config if available
                 if self.config.timeout_seconds:
-                    await asyncio.wait_for(self._page_ready.wait(), timeout=self.config.timeout_seconds)
+                    await asyncio.wait_for(
+                        self._page_ready.wait(), timeout=self.config.timeout_seconds
+                    )
                 else:
                     await self._page_ready.wait()
 
@@ -287,7 +289,9 @@ class AsyncStreamingResultSet:
                 assert self._page_ready is not None
                 # Use timeout from config if available
                 if self.config.timeout_seconds:
-                    await asyncio.wait_for(self._page_ready.wait(), timeout=self.config.timeout_seconds)
+                    await asyncio.wait_for(
+                        self._page_ready.wait(), timeout=self.config.timeout_seconds
+                    )
                 else:
                     await self._page_ready.wait()
 
@@ -333,18 +337,18 @@ class AsyncStreamingResultSet:
         """Close the streaming result set and clean up resources."""
         if self._closed:
             return
-        
+
         self._closed = True
         self._exhausted = True
-        
+
         # Clean up callbacks
         self._cleanup_callbacks()
-        
+
         # Clear current page to free memory
         with self._lock:
             self._current_page = []
             self._current_index = 0
-        
+
         # Clear any pending events
         if self._page_ready is not None:
             self._page_ready.set()  # Wake up any waiters

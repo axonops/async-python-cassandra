@@ -11,18 +11,13 @@ This example demonstrates:
 """
 
 import asyncio
-import time
 import uuid
 from datetime import datetime
+
 from async_cassandra import AsyncCluster
 from async_cassandra.metrics import (
-    InMemoryMetricsCollector,
     create_metrics_system,
-    QueryMetrics,
-    ConnectionMetrics,
-    MetricsCollector,
 )
-from async_cassandra.monitoring import ConnectionMonitor
 
 
 async def main():
@@ -108,22 +103,22 @@ async def main():
                 print(f"Success Rate: {perf['success_rate']:.2%}")
                 print(f"Queries/Second: {perf['queries_per_second']:.2f}")
 
-                print(f"\nPerformance Breakdown:")
+                print("\nPerformance Breakdown:")
                 print(f"  Min Duration: {perf['min_duration_ms']:.2f}ms")
                 print(f"  Max Duration: {perf['max_duration_ms']:.2f}ms")
 
             if "error_summary" in stats and stats["error_summary"]:
-                print(f"\n❌ Errors:")
+                print("\n❌ Errors:")
                 for error_type, count in stats["error_summary"].items():
                     print(f"  {error_type}: {count}")
 
             if "top_queries" in stats:
-                print(f"\n🔥 Top Queries:")
+                print("\n🔥 Top Queries:")
                 for query_hash, count in list(stats["top_queries"].items())[:5]:
                     print(f"  {query_hash}: {count} executions")
 
         # 6. Demonstrate connection health monitoring
-        print(f"\n🏥 Connection Health Monitoring:")
+        print("\n🏥 Connection Health Monitoring:")
         print("=" * 50)
 
         # Record connection health
@@ -150,7 +145,7 @@ async def main():
 async def prometheus_example():
     """Example showing Prometheus integration."""
     try:
-        from prometheus_client import start_http_server, generate_latest
+        from prometheus_client import generate_latest, start_http_server
 
         print("🔧 Setting up Prometheus metrics...")
         metrics = create_metrics_system(backend="memory", prometheus_enabled=True)
@@ -219,7 +214,7 @@ async def get_metrics():
 async def get_user(user_id: str):
     # This query will automatically be tracked in metrics
     result = await session.execute(
-        "SELECT * FROM users WHERE id = ?", 
+        "SELECT * FROM users WHERE id = ?",
         [uuid.UUID(user_id)]
     )
     return {"user": result.one()}
@@ -238,7 +233,7 @@ if __name__ == "__main__":
     # Run basic metrics demo
     asyncio.run(main())
 
-    print(f"\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print("🔬 Advanced Examples:")
 
     # Show Prometheus integration
@@ -247,7 +242,7 @@ if __name__ == "__main__":
     # Show FastAPI integration
     integration_with_fastapi()
 
-    print(f"\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print("✅ Demo completed!")
     print("\nKey Benefits of Metrics/Observability:")
     print("• 📊 Real-time performance monitoring")

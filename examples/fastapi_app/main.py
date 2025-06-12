@@ -8,9 +8,9 @@ Run with: uvicorn main:app --reload
 import asyncio
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr

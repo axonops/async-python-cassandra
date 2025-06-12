@@ -183,9 +183,9 @@ class TestAsyncRetryPolicyComprehensive:
         write_types_and_expected = [
             ("SIMPLE", RetryPolicy.RETRY),
             ("BATCH", RetryPolicy.RETRY),
+            ("UNLOGGED_BATCH", RetryPolicy.RETRY),  # Now retried when idempotent
             ("COUNTER", RetryPolicy.RETHROW),
             ("BATCH_LOG", RetryPolicy.RETHROW),
-            ("UNLOGGED_BATCH", RetryPolicy.RETHROW),
             ("CAS", RetryPolicy.RETHROW),  # Compare-and-set
         ]
 

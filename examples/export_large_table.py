@@ -15,6 +15,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+
 from async_cassandra import AsyncCluster, StreamConfig
 
 # Set up logging
@@ -99,7 +100,7 @@ async def export_table_async(session, table_name: str, output_file: str):
             row_count += 1
 
     elapsed = (datetime.now() - start_time).total_seconds()
-    logger.info(f"\nExport completed:")
+    logger.info("\nExport completed:")
     logger.info(f"- Rows exported: {row_count:,}")
     logger.info(f"- Time elapsed: {elapsed:.2f} seconds")
     logger.info(f"- Export rate: {row_count/elapsed:.0f} rows/sec")
@@ -157,7 +158,7 @@ def export_table_sync(session, table_name: str, output_file: str):
                 row_count += 1
 
         elapsed = (datetime.now() - start_time).total_seconds()
-        logger.info(f"\nExport completed:")
+        logger.info("\nExport completed:")
         logger.info(f"- Rows exported: {row_count:,}")
         logger.info(f"- Time elapsed: {elapsed:.2f} seconds")
         logger.info(f"- Export rate: {row_count/elapsed:.0f} rows/sec")
@@ -206,7 +207,7 @@ async def setup_sample_data(session):
     insert_stmt = await session.prepare(
         """
         INSERT INTO products (
-            category, product_id, name, price, in_stock, 
+            category, product_id, name, price, in_stock,
             tags, attributes, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """

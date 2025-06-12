@@ -12,6 +12,7 @@ This example demonstrates:
 import asyncio
 import logging
 from datetime import datetime
+
 from async_cassandra import AsyncCluster, StreamConfig
 
 # Set up logging
@@ -126,7 +127,7 @@ async def basic_streaming_example(session):
             logger.info(f"Processed {event_count} events ({rate:.0f} events/sec)")
 
     elapsed = (datetime.now() - start_time).total_seconds()
-    logger.info(f"\nStreaming completed:")
+    logger.info("\nStreaming completed:")
     logger.info(f"- Total events: {event_count}")
     logger.info(f"- Time elapsed: {elapsed:.2f} seconds")
     logger.info(f"- Rate: {event_count/elapsed:.0f} events/sec")
@@ -140,8 +141,8 @@ async def filtered_streaming_example(session):
     # Prepare a filtered query
     stmt = await session.prepare(
         """
-        SELECT * FROM events 
-        WHERE partition_id = ? 
+        SELECT * FROM events
+        WHERE partition_id = ?
         AND event_type = ?
     """
     )

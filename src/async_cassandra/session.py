@@ -418,9 +418,7 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         """Perform the actual session shutdown."""
         loop = asyncio.get_event_loop()
         # Use a reasonable timeout for shutdown operations
-        await asyncio.wait_for(
-            loop.run_in_executor(None, self._session.shutdown), timeout=30.0
-        )
+        await asyncio.wait_for(loop.run_in_executor(None, self._session.shutdown), timeout=30.0)
 
     @property
     def keyspace(self) -> Optional[str]:

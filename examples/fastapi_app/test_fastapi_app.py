@@ -8,7 +8,6 @@ improvements made to the async-cassandra library.
 import asyncio
 import time
 import uuid
-from typing import Dict, List
 
 import httpx
 import pytest

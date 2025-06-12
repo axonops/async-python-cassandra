@@ -174,9 +174,7 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
         """Perform the actual cluster shutdown."""
         loop = asyncio.get_event_loop()
         # Use a reasonable timeout for shutdown operations
-        await asyncio.wait_for(
-            loop.run_in_executor(None, self._cluster.shutdown), timeout=30.0
-        )
+        await asyncio.wait_for(loop.run_in_executor(None, self._cluster.shutdown), timeout=30.0)
 
     async def shutdown(self) -> None:
         """

@@ -12,9 +12,10 @@ This example demonstrates:
 import asyncio
 import logging
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+from typing import Dict
+
 from async_cassandra import AsyncCluster, StreamConfig
 
 # Set up logging
@@ -221,8 +222,8 @@ async def process_historical_data(session, processor: RealTimeProcessor):
     # Prepare query for specific date partition
     stmt = await session.prepare(
         """
-        SELECT * FROM sensor_readings 
-        WHERE date = ? 
+        SELECT * FROM sensor_readings
+        WHERE date = ?
         AND timestamp > ?
     """
     )
@@ -275,8 +276,8 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
     # Prepare query for recent data
     stmt = await session.prepare(
         """
-        SELECT * FROM sensor_readings 
-        WHERE date = ? 
+        SELECT * FROM sensor_readings
+        WHERE date = ?
         AND sensor_id = ?
         AND timestamp > ?
         LIMIT 10
@@ -348,7 +349,7 @@ async def main():
 
         # Show final summary
         summary = processor.get_summary()
-        logger.info(f"\nFinal Summary:")
+        logger.info("\nFinal Summary:")
         logger.info(f"- Active sensors: {summary['active_sensors']}")
         logger.info(f"- Total readings: {summary['total_readings']}")
         logger.info(f"- Alerts triggered: {summary['alerts_triggered']}")

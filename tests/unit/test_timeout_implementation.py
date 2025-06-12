@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from async_cassandra.cluster import AsyncCluster
-from async_cassandra.exceptions import ConnectionError
 from async_cassandra.session import AsyncCassandraSession
 from async_cassandra.streaming import AsyncStreamingResultSet, StreamConfig
 
@@ -20,13 +19,13 @@ class TestClusterTimeouts:
     async def test_connect_with_timeout(self):
         """Test that connect respects timeout parameter."""
         cluster = AsyncCluster(["127.0.0.1"])
-        
+
         # Mock AsyncCassandraSession.create to take too long
         async def slow_create(*args):
             await asyncio.sleep(5)  # Longer than timeout
             return Mock()
-        
-        with patch.object(AsyncCassandraSession, 'create', side_effect=slow_create):
+
+        with patch.object(AsyncCassandraSession, "create", side_effect=slow_create):
             with pytest.raises(asyncio.TimeoutError):
                 await cluster.connect(timeout=0.1)
 
@@ -34,10 +33,10 @@ class TestClusterTimeouts:
     async def test_connect_default_timeout(self):
         """Test that connect uses default timeout when not specified."""
         cluster = AsyncCluster(["127.0.0.1"])
-        
+
         # Mock successful connection
         mock_session = Mock()
-        with patch.object(AsyncCassandraSession, 'create', return_value=mock_session):
+        with patch.object(AsyncCassandraSession, "create", return_value=mock_session):
             # This should complete quickly (mocked)
             session = await cluster.connect()
             assert session == mock_session
@@ -46,14 +45,15 @@ class TestClusterTimeouts:
     async def test_shutdown_timeout(self):
         """Test that shutdown has a reasonable timeout."""
         cluster = AsyncCluster(["127.0.0.1"])
-        
+
         # Mock the underlying cluster shutdown to hang
         def slow_shutdown():
             import time
+
             time.sleep(40)  # Longer than 30s timeout
-        
+
         cluster._cluster.shutdown = slow_shutdown
-        
+
         # Should timeout after 30 seconds
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(cluster.close(), timeout=31)
@@ -75,16 +75,17 @@ class TestSessionTimeouts:
     async def test_prepare_with_timeout(self, mock_session):
         """Test that prepare respects timeout parameter."""
         async_session = AsyncCassandraSession(mock_session._session)
-        
+
         # Mock prepare to take too long
         def slow_prepare(*args):
             import time
+
             time.sleep(5)  # Longer than timeout
             return Mock()
-        
+
         mock_session._session.prepare = slow_prepare
         async_session._session = mock_session._session
-        
+
         with pytest.raises(asyncio.TimeoutError):
             await async_session.prepare("SELECT * FROM test", timeout=0.1)
 
@@ -92,12 +93,12 @@ class TestSessionTimeouts:
     async def test_prepare_default_timeout(self, mock_session):
         """Test that prepare uses default timeout when not specified."""
         async_session = AsyncCassandraSession(mock_session._session)
-        
+
         # Mock successful prepare
         mock_prepared = Mock()
         mock_session._session.prepare = Mock(return_value=mock_prepared)
         async_session._session = mock_session._session
-        
+
         # This should complete quickly (mocked)
         prepared = await async_session.prepare("SELECT * FROM test")
         assert prepared == mock_prepared
@@ -106,15 +107,16 @@ class TestSessionTimeouts:
     async def test_session_shutdown_timeout(self, mock_session):
         """Test that session shutdown has a reasonable timeout."""
         async_session = AsyncCassandraSession(mock_session._session)
-        
+
         # Mock the session shutdown to hang
         def slow_shutdown():
             import time
+
             time.sleep(40)  # Longer than 30s timeout
-        
+
         mock_session._session.shutdown = slow_shutdown
         async_session._session = mock_session._session
-        
+
         # Should timeout after 30 seconds
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(async_session.close(), timeout=31)
@@ -137,11 +139,11 @@ class TestStreamingTimeouts:
         """Test that streaming respects timeout in config."""
         config = StreamConfig(timeout_seconds=0.1)
         stream = AsyncStreamingResultSet(mock_response_future, config)
-        
+
         # Create page ready event but never set it
         stream._page_ready = asyncio.Event()
         stream._loop = asyncio.get_running_loop()
-        
+
         # Should timeout waiting for page
         with pytest.raises(asyncio.TimeoutError):
             await stream._fetch_next_page()
@@ -151,19 +153,19 @@ class TestStreamingTimeouts:
         """Test that streaming works without timeout when not configured."""
         config = StreamConfig()  # No timeout
         stream = AsyncStreamingResultSet(mock_response_future, config)
-        
+
         # Create page ready event
         stream._page_ready = asyncio.Event()
         stream._loop = asyncio.get_running_loop()
-        
+
         # Set the event after a short delay
         async def set_event():
             await asyncio.sleep(0.1)
             stream._page_ready.set()
             stream._exhausted = True
-        
+
         asyncio.create_task(set_event())
-        
+
         # Should complete without timeout
         result = await stream._fetch_next_page()
         assert result is False  # No more pages
@@ -173,14 +175,14 @@ class TestStreamingTimeouts:
         """Test that streaming iteration respects timeout."""
         config = StreamConfig(timeout_seconds=0.1)
         stream = AsyncStreamingResultSet(mock_response_future, config)
-        
+
         # Mock page data
         stream._first_page_ready = False
         stream._page_ready = asyncio.Event()
         stream._loop = asyncio.get_running_loop()
-        
+
         # Never set the page ready event
-        
+
         # Should timeout during iteration
         with pytest.raises(asyncio.TimeoutError):
             async for row in stream:
@@ -191,14 +193,14 @@ class TestStreamingTimeouts:
         """Test that streaming pages iteration respects timeout."""
         config = StreamConfig(timeout_seconds=0.1)
         stream = AsyncStreamingResultSet(mock_response_future, config)
-        
+
         # Mock initial state
         stream._first_page_ready = False
         stream._page_ready = asyncio.Event()
         stream._loop = asyncio.get_running_loop()
-        
+
         # Never set the page ready event
-        
+
         # Should timeout during pages iteration
         with pytest.raises(asyncio.TimeoutError):
             async for page in stream.pages():
@@ -211,7 +213,7 @@ class TestTimeoutConstants:
     def test_default_constants_exist(self):
         """Test that default timeout constants are defined."""
         from async_cassandra.constants import DEFAULT_CONNECTION_TIMEOUT, DEFAULT_REQUEST_TIMEOUT
-        
+
         assert DEFAULT_CONNECTION_TIMEOUT == 10.0
         assert DEFAULT_REQUEST_TIMEOUT == 120.0
 
@@ -219,22 +221,22 @@ class TestTimeoutConstants:
     async def test_connect_uses_default_constant(self):
         """Test that connect uses DEFAULT_CONNECTION_TIMEOUT."""
         cluster = AsyncCluster(["127.0.0.1"])
-        
+
         # Mock to track timeout value
         create_called_with_timeout = None
-        
+
         async def mock_create(*args):
             return Mock()
-        
+
         async def mock_wait_for(coro, timeout):
             nonlocal create_called_with_timeout
             create_called_with_timeout = timeout
             return await coro
-        
-        with patch.object(AsyncCassandraSession, 'create', side_effect=mock_create):
-            with patch('asyncio.wait_for', side_effect=mock_wait_for):
+
+        with patch.object(AsyncCassandraSession, "create", side_effect=mock_create):
+            with patch("asyncio.wait_for", side_effect=mock_wait_for):
                 await cluster.connect()
-        
+
         # Should use default timeout
         assert create_called_with_timeout == 10.0
 
@@ -245,17 +247,17 @@ class TestTimeoutConstants:
         mock_session.prepare = Mock(return_value=Mock())
         async_session = AsyncCassandraSession(mock_session)
         async_session._session = mock_session
-        
+
         # Mock to track timeout value
         prepare_called_with_timeout = None
-        
+
         async def mock_wait_for(coro, timeout):
             nonlocal prepare_called_with_timeout
             prepare_called_with_timeout = timeout
             return await coro
-        
-        with patch('asyncio.wait_for', side_effect=mock_wait_for):
+
+        with patch("asyncio.wait_for", side_effect=mock_wait_for):
             await async_session.prepare("SELECT * FROM test")
-        
+
         # Should use default timeout
         assert prepare_called_with_timeout == 120.0
