@@ -7,7 +7,7 @@ and understand their application's behavior in production.
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.acceptance
@@ -29,9 +29,18 @@ class TestMonitoringWorkflows:
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
-        """Create test client for FastAPI app."""
-        transport = ASGITransport(app=fastapi_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        """Create test client for FastAPI app with proper lifespan management."""
+        from contextlib import AsyncExitStack
+
+        async with AsyncExitStack() as stack:
+            # Start the lifespan context
+            await stack.enter_async_context(fastapi_app.router.lifespan_context(fastapi_app))
+
+            # Create the test client
+            transport = ASGITransport(app=fastapi_app)
+            client = await stack.enter_async_context(
+                AsyncClient(transport=transport, base_url="http://test")
+            )
             yield client
 
     @pytest.mark.asyncio
@@ -102,7 +111,7 @@ class TestMonitoringWorkflows:
         )
 
         # When: Streaming operation with metadata
-        stream_response = await test_client.get("/users/stream?limit=10&fetch_size=5")
+        stream_response = await test_client.get("/users/stream?limit=10&fetch_size=10")
 
         # Then: Metadata is provided
         assert stream_response.status_code == 200

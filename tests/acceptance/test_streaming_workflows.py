@@ -7,7 +7,7 @@ large datasets efficiently in real-world scenarios.
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.acceptance
@@ -29,9 +29,18 @@ class TestStreamingWorkflows:
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
-        """Create test client for FastAPI app."""
-        transport = ASGITransport(app=fastapi_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        """Create test client for FastAPI app with proper lifespan management."""
+        from contextlib import AsyncExitStack
+
+        async with AsyncExitStack() as stack:
+            # Start the lifespan context
+            await stack.enter_async_context(fastapi_app.router.lifespan_context(fastapi_app))
+
+            # Create the test client
+            transport = ASGITransport(app=fastapi_app)
+            client = await stack.enter_async_context(
+                AsyncClient(transport=transport, base_url="http://test")
+            )
             yield client
 
     @pytest_asyncio.fixture
@@ -158,10 +167,12 @@ class TestStreamingWorkflows:
         """
         # When: User sets specific limits
         limited_response = await test_client.get(
-            "/users/stream/pages?limit=100&fetch_size=5&max_pages=3"
+            "/users/stream/pages?limit=100&fetch_size=10&max_pages=3"
         )
 
         # Then: Limits are respected
+        if limited_response.status_code != 200:
+            print(f"Error response: {limited_response.json()}")
         assert limited_response.status_code == 200
         result = limited_response.json()
 
@@ -169,4 +180,4 @@ class TestStreamingWorkflows:
         assert len(pages) <= 3  # Max pages limit
 
         total_rows = sum(page["rows_in_page"] for page in pages)
-        assert total_rows <= 15  # 3 pages * 5 rows max
+        assert total_rows <= 30  # 3 pages * 10 rows max

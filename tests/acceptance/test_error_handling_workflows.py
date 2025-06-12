@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.acceptance
@@ -32,9 +32,18 @@ class TestErrorHandlingWorkflows:
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
-        """Create test client for FastAPI app."""
-        transport = ASGITransport(app=fastapi_app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        """Create test client for FastAPI app with proper lifespan management."""
+        from contextlib import AsyncExitStack
+
+        async with AsyncExitStack() as stack:
+            # Start the lifespan context
+            await stack.enter_async_context(fastapi_app.router.lifespan_context(fastapi_app))
+
+            # Create the test client
+            transport = ASGITransport(app=fastapi_app)
+            client = await stack.enter_async_context(
+                AsyncClient(transport=transport, base_url="http://test")
+            )
             yield client
 
     @pytest.mark.asyncio
@@ -174,6 +183,8 @@ class TestErrorHandlingWorkflows:
         empty_stream_response = await test_client.get("/users/stream?limit=0")
 
         # Then: Empty result is handled
+        if empty_stream_response.status_code != 200:
+            print(f"Error response: {empty_stream_response.json()}")
         assert empty_stream_response.status_code == 200
         result = empty_stream_response.json()
         assert len(result["users"]) == 0
