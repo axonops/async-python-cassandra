@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff black isort mypy types-setuptools
+    
+    - name: Run ruff
+      run: ruff check src tests
+    
+    - name: Check formatting with black
+      run: black --check src tests
+    
+    - name: Check import sorting with isort
+      run: isort --check-only src tests
+    
+    - name: Run type checking with mypy
+      run: mypy src
+
+  test:
+    name: Test Python 3.12
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-3.12-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-3.12-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+    
+    - name: Run unit tests
+      run: |
+        pytest tests/unit -v --cov=src/async_cassandra --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: github.event_name == 'push'
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+        verbose: true
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cassandra-version: ["5.0"]
+    services:
+      cassandra:
+        image: cassandra:${{ matrix.cassandra-version }}
+        ports:
+          - 9042:9042
+        options: >-
+          --health-cmd "cqlsh -e 'describe cluster'"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-integration-${{ hashFiles('pyproject.toml', 'examples/fastapi_app/requirements-ci.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-integration-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+        pip install -r examples/fastapi_app/requirements-ci.txt
+    
+    - name: Wait for Cassandra
+      run: |
+        for i in {1..30}; do
+          if docker exec ${{ job.services.cassandra.id }} cqlsh -e "describe cluster" 2>/dev/null; then
+            echo "Cassandra is ready"
+            break
+          fi
+          echo "Waiting for Cassandra... ($i/30)"
+          sleep 10
+        done
+    
+    - name: Run all integration tests (including stress and FastAPI)
+      run: |
+        pytest tests/integration -v -m integration --timeout=300
+      env:
+        CASSANDRA_HOST: localhost
+        CASSANDRA_PORT: 9042
+
+
+  build:
+    name: Build Distribution
+    runs-on: ubuntu-latest
+    needs: [lint, test, integration-test]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Build distribution
+      run: python -m build
+    
+    - name: Check distribution
+      run: twine check dist/*
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'  # Only run on push, not on every PR
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run bandit security linter
+      run: |
+        pip install bandit[toml]
+        bandit -r src/ -ll -i -x tests
+    
+    - name: Run safety check
+      run: |
+        pip install safety
+        pip install -e .
+        safety check --json --continue-on-error
