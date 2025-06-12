@@ -244,11 +244,7 @@ class TestThreadPoolConfigurationIntegration:
     async def test_thread_pool_memory_overhead(self, cluster_factory):
         """Test memory overhead of different thread pool sizes."""
         import os
-
-        try:
-            import psutil
-        except ImportError:
-            pytest.skip("psutil not installed")
+        import psutil
 
         process = psutil.Process(os.getpid())
 
