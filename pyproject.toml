@@ -89,6 +89,8 @@ pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "stress: marks tests as stress tests for high load scenarios (deselect with '-m \"not stress\"')",
+    "acceptance: marks tests as BDD acceptance tests for user workflows (deselect with '-m \"not acceptance\"')",
+    "benchmark: marks tests as performance benchmarks with thresholds (deselect with '-m \"not benchmark\"')",
 ]
 
 [tool.coverage.run]
