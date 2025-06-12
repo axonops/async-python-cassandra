@@ -1,17 +1,9 @@
-# FastAPI and web server
+# FastAPI Example Requirements
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
+httpx>=0.24.0  # For testing
 pydantic>=2.0.0
 pydantic[email]>=2.0.0
 
-# Async Cassandra driver
-# Use local development version:
--e ../..
-
-# HTTP client for testing
-httpx>=0.24.0
-
-# Testing dependencies
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-testcontainers[cassandra]>=3.7.0
+# Install async-cassandra from parent directory in development
+# In production, use: async-cassandra>=0.1.0
