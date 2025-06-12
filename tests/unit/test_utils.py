@@ -128,6 +128,7 @@ class TestSafeCallSoonThreadsafe:
         # Lambda
         def lambda_func(x):
             return x * 2
+
         safe_call_soon_threadsafe(mock_loop, lambda_func, 5)
         mock_loop.call_soon_threadsafe.assert_called_with(lambda_func, 5)
 

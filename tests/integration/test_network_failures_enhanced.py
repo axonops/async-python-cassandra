@@ -201,7 +201,8 @@ class TestEnhancedNetworkFailures:
         # Insert data
         for i in range(1000):
             await cassandra_session.execute(
-                "INSERT INTO cancellation_test (id, data) VALUES (%s, %s)", [uuid.uuid4(), "x" * 1000]
+                "INSERT INTO cancellation_test (id, data) VALUES (%s, %s)",
+                [uuid.uuid4(), "x" * 1000],
             )
 
         # Start a long-running query
