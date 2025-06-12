@@ -55,7 +55,8 @@ def pytest_unconfigure(config):
 @pytest_asyncio.fixture
 async def cassandra_cluster():
     """Create an async Cassandra cluster for testing."""
-    cluster = AsyncCluster(contact_points=["localhost"])
+    # Set protocol_version to 4 to avoid negotiation issues
+    cluster = AsyncCluster(contact_points=["localhost"], protocol_version=4)
     yield cluster
     await cluster.shutdown()
 
