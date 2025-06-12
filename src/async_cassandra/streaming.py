@@ -50,7 +50,7 @@ class AsyncStreamingResultSet:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             # If no event loop is running, we'll get it when needed
-            self._loop = None
+            self._loop = None  # type: ignore[assignment]
         self._current_page: List[Any] = []
         self._current_index = 0
         self._page_number = 0
@@ -63,10 +63,10 @@ class AsyncStreamingResultSet:
         self._lock = threading.Lock()
 
         # Track active callbacks with weak references to avoid cycles
-        self._active_callbacks = weakref.WeakSet()
+        self._active_callbacks: weakref.WeakSet[Any] = weakref.WeakSet()
 
         # Event to signal when a page is ready (created lazily)
-        self._page_ready = None
+        self._page_ready: Optional[asyncio.Event] = None
 
         # Start fetching the first page
         self._setup_callbacks()
@@ -134,16 +134,18 @@ class AsyncStreamingResultSet:
         # Ensure we have event loop and page_ready event
         if not self._loop:
             self._loop = asyncio.get_running_loop()
-        if not self._page_ready:
+        if self._page_ready is None:
             self._page_ready = asyncio.Event()
 
         # Clear the event before fetching
+        assert self._page_ready is not None
         self._page_ready.clear()
 
         # Start fetching the next page
         self.response_future.start_fetching_next_page()
 
         # Wait for the page to be ready
+        assert self._page_ready is not None
         await self._page_ready.wait()
 
         # Check for errors
@@ -161,11 +163,12 @@ class AsyncStreamingResultSet:
         # Ensure we have event loop and page_ready event
         if not self._loop:
             self._loop = asyncio.get_running_loop()
-        if not self._page_ready:
+        if self._page_ready is None:
             self._page_ready = asyncio.Event()
 
         # Wait for first page if not ready yet
         if not self._first_page_ready:
+            assert self._page_ready is not None
             await self._page_ready.wait()
 
         # Check for errors first
@@ -196,11 +199,12 @@ class AsyncStreamingResultSet:
         # Ensure we have event loop and page_ready event
         if not self._loop:
             self._loop = asyncio.get_running_loop()
-        if not self._page_ready:
+        if self._page_ready is None:
             self._page_ready = asyncio.Event()
 
         # Wait for first page if not ready yet
         if not self._first_page_ready:
+            assert self._page_ready is not None
             await self._page_ready.wait()
 
         # Yield the current page if it has data
@@ -231,12 +235,12 @@ class AsyncStreamingResultSet:
         # Note: ResponseFuture doesn't provide a direct cancel method,
         # but setting exhausted will stop fetching new pages
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup when object is garbage collected."""
         # Clear any remaining references
-        if hasattr(self, '_current_page'):
+        if hasattr(self, "_current_page"):
             self._current_page = []
-        if hasattr(self, '_active_callbacks'):
+        if hasattr(self, "_active_callbacks"):
             self._active_callbacks.clear()
 
 

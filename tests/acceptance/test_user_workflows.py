@@ -5,15 +5,11 @@ These tests follow the Given-When-Then format to validate
 complete user journeys through the async-cassandra library.
 """
 
-import asyncio
 import uuid
-from datetime import datetime
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
-
-from async_cassandra import AsyncCluster
+from httpx import AsyncClient, ASGITransport
 
 
 @pytest.mark.acceptance
@@ -23,19 +19,21 @@ class TestUserWorkflows:
     @pytest_asyncio.fixture
     async def fastapi_app(self):
         """Create FastAPI application for testing."""
-        import sys
         import os
-        
+        import sys
+
         # Add examples directory to path
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../examples/fastapi_app"))
-        
+
         from main import app
+
         return app
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
         """Create test client for FastAPI app."""
-        async with AsyncClient(app=fastapi_app, base_url="http://test") as client:
+        transport = ASGITransport(app=fastapi_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 
     @pytest.mark.asyncio
@@ -46,15 +44,11 @@ class TestUserWorkflows:
         THEN the profile should be created and retrievable
         """
         # Given: Valid user data
-        user_data = {
-            "name": "John Doe",
-            "email": "john@example.com",
-            "age": 30
-        }
+        user_data = {"name": "John Doe", "email": "john@example.com", "age": 30}
 
         # When: User creates profile
         create_response = await test_client.post("/users", json=user_data)
-        
+
         # Then: Profile is created successfully
         assert create_response.status_code == 201
         created_user = create_response.json()
@@ -80,21 +74,14 @@ class TestUserWorkflows:
         THEN the changes should be persisted and reflected
         """
         # Given: Existing user profile
-        initial_data = {
-            "name": "Jane Smith",
-            "email": "jane@example.com",
-            "age": 25
-        }
+        initial_data = {"name": "Jane Smith", "email": "jane@example.com", "age": 25}
         create_response = await test_client.post("/users", json=initial_data)
         user = create_response.json()
         user_id = user["id"]
         original_updated_at = user["updated_at"]
 
         # When: User updates their profile
-        update_data = {
-            "name": "Jane Johnson",
-            "age": 26
-        }
+        update_data = {"name": "Jane Johnson", "age": 26}
         update_response = await test_client.put(f"/users/{user_id}", json=update_data)
 
         # Then: Updates are successful
@@ -113,11 +100,7 @@ class TestUserWorkflows:
         THEN their profile should be removed completely
         """
         # Given: User with existing account
-        user_data = {
-            "name": "Delete Me",
-            "email": "delete@example.com",
-            "age": 35
-        }
+        user_data = {"name": "Delete Me", "email": "delete@example.com", "age": 35}
         create_response = await test_client.post("/users", json=user_data)
         user_id = create_response.json()["id"]
 
@@ -140,10 +123,9 @@ class TestUserWorkflows:
         """
         # Given: Multiple users exist
         test_users = [
-            {"name": f"User {i}", "email": f"user{i}@test.com", "age": 20 + i}
-            for i in range(5)
+            {"name": f"User {i}", "email": f"user{i}@test.com", "age": 20 + i} for i in range(5)
         ]
-        
+
         for user_data in test_users:
             await test_client.post("/users", json=user_data)
 
@@ -165,7 +147,7 @@ class TestUserWorkflows:
         """
         # Given/When: Invalid UUID format
         invalid_response = await test_client.get("/users/not-a-uuid")
-        
+
         # Then: Proper error handling
         assert invalid_response.status_code == 400
         assert "Invalid UUID" in invalid_response.json()["detail"]
@@ -173,18 +155,14 @@ class TestUserWorkflows:
         # Given/When: Non-existent user
         fake_uuid = str(uuid.uuid4())
         missing_response = await test_client.get(f"/users/{fake_uuid}")
-        
+
         # Then: 404 response
         assert missing_response.status_code == 404
         assert "User not found" in missing_response.json()["detail"]
 
         # Given/When: Invalid email format
-        invalid_user = {
-            "name": "Bad Email",
-            "email": "not-an-email",
-            "age": 30
-        }
+        invalid_user = {"name": "Bad Email", "email": "not-an-email", "age": 30}
         create_response = await test_client.post("/users", json=invalid_user)
-        
+
         # Then: Validation error
         assert create_response.status_code == 422

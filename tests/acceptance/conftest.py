@@ -2,11 +2,8 @@
 Configuration for acceptance tests.
 """
 
-import os
 import sys
 from pathlib import Path
-
-import pytest
 
 # Add the examples directory to Python path so we can import the FastAPI app
 examples_path = Path(__file__).parent.parent.parent / "examples"
@@ -17,6 +14,5 @@ def pytest_configure(config):
     """Configure pytest for acceptance tests."""
     # Register custom markers
     config.addinivalue_line(
-        "markers", 
-        "acceptance: mark test as an acceptance test following BDD patterns"
+        "markers", "acceptance: mark test as an acceptance test following BDD patterns"
     )

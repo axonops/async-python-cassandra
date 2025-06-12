@@ -11,8 +11,6 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
 
-import pytest
-
 from async_cassandra.result import AsyncResultHandler
 from async_cassandra.streaming import AsyncStreamingResultSet, StreamConfig
 
@@ -73,6 +71,7 @@ class TestAsyncResultHandlerThreadSafety:
         WHEN setting future results
         THEN call_soon_threadsafe should be used
         """
+
         async def run_test():
             loop = asyncio.get_running_loop()
 
@@ -111,8 +110,9 @@ class TestAsyncResultHandlerThreadSafety:
 
                 # Verify thread safety was maintained
                 assert result_thread != threading.current_thread()
-                assert call_soon_threadsafe_used, \
-                    "call_soon_threadsafe should be used for cross-thread calls"
+                assert (
+                    call_soon_threadsafe_used
+                ), "call_soon_threadsafe should be used for cross-thread calls"
 
             finally:
                 loop.call_soon_threadsafe = original_call_soon_threadsafe
@@ -153,8 +153,9 @@ class TestAsyncResultHandlerThreadSafety:
         actual_total = len(handler.rows)
 
         # This might fail due to race conditions
-        assert actual_total == expected_total, \
-            f"Race condition detected: expected {expected_total}, got {actual_total}"
+        assert (
+            actual_total == expected_total
+        ), f"Race condition detected: expected {expected_total}, got {actual_total}"
 
 
 class TestStreamingMemoryLeaks:
@@ -197,7 +198,7 @@ class TestStreamingMemoryLeaks:
         mock_future.add_callbacks = Mock()
 
         handler = AsyncStreamingResultSet(mock_future)
-        
+
         # Simulate first page callback
         first_page = [f"row_0_{i}" for i in range(100)]
         handler._handle_page(first_page)
@@ -214,7 +215,7 @@ class TestStreamingMemoryLeaks:
 
         # Check that handler only holds one page at a time
         assert len(handler._current_page) <= 100, "Handler should only hold one page"
-        
+
         # Verify pages were replaced, not accumulated
         assert len(pages_created) == 5  # 5 pages from mock_fetch_next
 
@@ -251,17 +252,17 @@ class TestStreamingMemoryLeaks:
         handler = TrackedHandler(future)
 
         # Use the handler
-        async def use_handler():
-            handler._handle_page([1, 2, 3])
-            handler._exhausted = True
+        async def use_handler(h):
+            h._handle_page([1, 2, 3])
+            h._exhausted = True
 
             try:
-                async for item in handler:
+                async for _ in h:
                     pass
             except StopAsyncIteration:
                 pass
 
-        asyncio.run(use_handler())
+        asyncio.run(use_handler(handler))
 
         # Clear explicit references
         del future
@@ -284,9 +285,10 @@ class TestStreamingMemoryLeaks:
         THEN config and callbacks should be cleaned up
         """
         callback_refs = []
-        
+
         class CallbackData:
             """Object that can be weakly referenced"""
+
             def __init__(self, page_num, row_count):
                 self.page = page_num
                 self.rows = row_count
@@ -296,11 +298,7 @@ class TestStreamingMemoryLeaks:
             data = CallbackData(page_num, row_count)
             callback_refs.append(weakref.ref(data))
 
-        config = StreamConfig(
-            fetch_size=10,
-            max_pages=5,
-            page_callback=progress_callback
-        )
+        config = StreamConfig(fetch_size=10, max_pages=5, page_callback=progress_callback)
 
         # Create a simpler test that doesn't require async iteration
         mock_future = Mock()
@@ -308,7 +306,7 @@ class TestStreamingMemoryLeaks:
         mock_future.add_callbacks = Mock()
 
         handler = AsyncStreamingResultSet(mock_future, config)
-        
+
         # Simulate page callbacks directly
         handler._handle_page([f"row_{i}" for i in range(10)])
         handler._handle_page([f"row_{i}" for i in range(10, 20)])
@@ -344,12 +342,13 @@ class TestErrorHandlingConsistency:
 
         # Test execute() error handling with AsyncResultHandler
         execute_error = None
+
         async def test_execute():
             nonlocal execute_error
             mock_future = Mock()
             mock_future.add_callbacks = Mock()
             mock_future.has_more_pages = False
-            
+
             handler = AsyncResultHandler(mock_future)
             # Simulate error callback being called after init
             handler._handle_error(base_error)
@@ -357,7 +356,7 @@ class TestErrorHandlingConsistency:
                 await handler.get_result()
             except Exception as e:
                 execute_error = e
-                
+
         asyncio.run(test_execute())
 
         # Test execute_stream() error handling with AsyncStreamingResultSet
@@ -365,7 +364,7 @@ class TestErrorHandlingConsistency:
         stream_mock_future = Mock()
         stream_mock_future.add_callbacks = Mock()
         stream_mock_future.has_more_pages = False
-        
+
         # Get the error that would be raised
         stream_handler = AsyncStreamingResultSet(stream_mock_future)
         stream_handler._handle_error(base_error)
@@ -374,8 +373,9 @@ class TestErrorHandlingConsistency:
         # Both should have the same error type
         assert execute_error is not None
         assert stream_error is not None
-        assert type(execute_error) == type(stream_error), \
-            f"Different error types: {type(execute_error)} vs {type(stream_error)}"
+        assert type(execute_error) is type(
+            stream_error
+        ), f"Different error types: {type(execute_error)} vs {type(stream_error)}"
         assert isinstance(execute_error, InvalidRequest)
         assert isinstance(stream_error, InvalidRequest)
 
@@ -391,6 +391,7 @@ class TestErrorHandlingConsistency:
 
         # Test in AsyncResultHandler
         result_error = None
+
         async def get_result_error():
             nonlocal result_error
             mock_future = Mock()

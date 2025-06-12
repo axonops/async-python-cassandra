@@ -24,8 +24,10 @@ class AsyncResultHandler:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             # If no event loop is running, we'll create the future when needed
-            self._loop = None
-        self._future = self._loop.create_future() if self._loop else None
+            self._loop = None  # type: ignore[assignment]
+        self._future: Optional[asyncio.Future[AsyncResultSet]] = (
+            self._loop.create_future() if self._loop else None
+        )
         # Thread lock to protect shared state from concurrent driver callbacks
         self._lock = threading.Lock()
 
@@ -69,6 +71,8 @@ class AsyncResultHandler:
             self._loop = asyncio.get_running_loop()
             self._future = self._loop.create_future()
 
+        if self._future is None:
+            raise RuntimeError("Future not initialized")
         return await self._future
 
 

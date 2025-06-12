@@ -64,7 +64,7 @@ class TestConcurrentOperations:
         durations = [d for _, d in results]
         avg_duration = sum(durations) / len(durations)
 
-        print(f"\nConcurrent read test results:")
+        print("\nConcurrent read test results:")
         print(f"  Total time: {total_time:.2f}s")
         print(f"  Average read latency: {avg_duration*1000:.2f}ms")
         print(f"  Reads per second: {1000/total_time:.0f}")
@@ -88,7 +88,7 @@ class TestConcurrentOperations:
                     [uuid.uuid4(), f"Concurrent User {i}", f"concurrent{i}@test.com", 25],
                 )
                 return True, time.time() - start
-            except Exception as e:
+            except Exception:
                 return False, time.time() - start
 
         # Create 500 concurrent write tasks
@@ -102,7 +102,7 @@ class TestConcurrentOperations:
         successful_writes = sum(1 for r in results if isinstance(r, tuple) and r[0])
         failed_writes = 500 - successful_writes
 
-        print(f"\nConcurrent write test results:")
+        print("\nConcurrent write test results:")
         print(f"  Total time: {total_time:.2f}s")
         print(f"  Successful writes: {successful_writes}")
         print(f"  Failed writes: {failed_writes}")
@@ -178,7 +178,7 @@ class TestConcurrentOperations:
         successful = sum(1 for r in results if not isinstance(r, Exception))
         failed = sum(1 for r in results if isinstance(r, Exception))
 
-        print(f"\nMixed operations test results:")
+        print("\nMixed operations test results:")
         print(f"  Total operations: {len(operations)}")
         print(f"  Successful: {successful}")
         print(f"  Failed: {failed}")
@@ -235,7 +235,7 @@ class TestConcurrentOperations:
         one_success = sum(1 for r1, _ in results if r1)
         all_success = sum(1 for _, r2 in results if r2)
 
-        print(f"\nConsistency level test results:")
+        print("\nConsistency level test results:")
         print(f"  CL.ONE successful reads: {one_success}/100")
         print(f"  CL.ALL successful reads: {all_success}/100")
 
@@ -310,7 +310,7 @@ class TestConcurrentOperations:
         assert final_row is not None
         assert 1 <= final_row.count <= 50  # Some updates will be lost due to races
 
-        print(f"\nPrepared statement concurrency test:")
-        print(f"  Expected increments: 50")
+        print("\nPrepared statement concurrency test:")
+        print("  Expected increments: 50")
         print(f"  Final count: {final_row.count}")
         print(f"  Lost updates: {50 - final_row.count} (expected due to race conditions)")

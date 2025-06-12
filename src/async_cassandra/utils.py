@@ -4,7 +4,7 @@ Utility functions and helpers for async-cassandra.
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def get_or_create_event_loop() -> asyncio.AbstractEventLoop:
 
 
 def safe_call_soon_threadsafe(
-    loop: Optional[asyncio.AbstractEventLoop], callback, *args
+    loop: Optional[asyncio.AbstractEventLoop], callback: Any, *args: Any
 ) -> None:
     """
     Safely schedule a callback in the event loop from another thread.

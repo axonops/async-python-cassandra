@@ -17,12 +17,12 @@ from fastapi.testclient import TestClient
 class TestFastAPIComprehensive:
     """Comprehensive tests for FastAPI integration following TDD principles."""
 
-
     @pytest.fixture
     def test_client(self):
         """Create FastAPI test client."""
         # Import here to ensure app is created fresh
         from examples.fastapi_app.main import app
+
         # TestClient properly handles lifespan in newer FastAPI versions
         with TestClient(app) as client:
             yield client
@@ -46,12 +46,13 @@ class TestFastAPIComprehensive:
         WHEN many requests are sent simultaneously
         THEN all requests should be handled without blocking or data corruption
         """
+
         # Create multiple users concurrently
         def create_user(i):
             user_data = {
                 "name": f"concurrent_user_{i}",  # Changed from username to name
                 "email": f"user{i}@example.com",
-                "age": 25 + (i % 50)  # Add required age field
+                "age": 25 + (i % 50),  # Add required age field
             }
             return test_client.post("/users", json=user_data)
 
@@ -78,7 +79,7 @@ class TestFastAPIComprehensive:
             user_data = {
                 "name": f"stream_user_{i}",
                 "email": f"stream{i}@example.com",
-                "age": 20 + (i % 60)
+                "age": 20 + (i % 60),
             }
             test_client.post("/users", json=user_data)
 
@@ -94,7 +95,6 @@ class TestFastAPIComprehensive:
         assert "metadata" in data
         assert data["metadata"]["streaming_enabled"] is True
         assert len(data["users"]) >= 100  # Should have at least the users we created
-
 
     def test_error_handling_and_recovery(self, test_client):
         """
@@ -245,13 +245,11 @@ class TestFastAPIComprehensive:
         user_data = {
             "name": f"consistency_test_{consistency_level}",
             "email": f"test_{consistency_level}@example.com",
-            "age": 25
+            "age": 25,
         }
 
         response = test_client.post(
-            "/users",
-            json=user_data,
-            headers={"X-Consistency-Level": consistency_level}
+            "/users", json=user_data, headers={"X-Consistency-Level": consistency_level}
         )
 
         assert response.status_code == 201
@@ -259,8 +257,7 @@ class TestFastAPIComprehensive:
         # Verify it was created
         user_id = response.json()["id"]
         get_response = test_client.get(
-            f"/users/{user_id}",
-            headers={"X-Consistency-Level": consistency_level}
+            f"/users/{user_id}", headers={"X-Consistency-Level": consistency_level}
         )
         assert get_response.status_code == 200
 
@@ -272,8 +269,7 @@ class TestFastAPIComprehensive:
         """
         # Create a slow query endpoint (would need to be added to FastAPI app)
         response = test_client.get(
-            "/slow_query",
-            headers={"X-Request-Timeout": "0.1"}  # 100ms timeout
+            "/slow_query", headers={"X-Request-Timeout": "0.1"}  # 100ms timeout
         )
 
         # Should timeout

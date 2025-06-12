@@ -8,11 +8,10 @@ on its performance promises in real-world scenarios.
 import asyncio
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 
 @pytest.mark.acceptance
@@ -22,19 +21,21 @@ class TestPerformanceWorkflows:
     @pytest_asyncio.fixture
     async def fastapi_app(self):
         """Create FastAPI application for testing."""
-        import sys
         import os
-        
+        import sys
+
         # Add examples directory to path
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../examples/fastapi_app"))
-        
+
         from main import app
+
         return app
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
         """Create test client for FastAPI app."""
-        async with AsyncClient(app=fastapi_app, base_url="http://test") as client:
+        transport = ASGITransport(app=fastapi_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 
     @pytest.mark.asyncio
@@ -49,7 +50,7 @@ class TestPerformanceWorkflows:
 
         # When: Using async operations
         async_response = await test_client.get(f"/performance/async?requests={num_requests}")
-        
+
         # When: Using sync-style operations
         sync_response = await test_client.get(f"/performance/sync?requests={num_requests}")
 
@@ -73,47 +74,45 @@ class TestPerformanceWorkflows:
         """
         # Given: Multiple concurrent users
         num_users = 10
-        
+
         async def user_journey(user_id: int):
             """Simulate a complete user journey."""
             # Create profile
             create_data = {
                 "name": f"Concurrent User {user_id}",
                 "email": f"concurrent{user_id}@test.com",
-                "age": 25 + user_id
+                "age": 25 + user_id,
             }
             create_resp = await test_client.post("/users", json=create_data)
             assert create_resp.status_code == 201
-            
+
             user = create_resp.json()
             user_uuid = user["id"]
-            
+
             # Read profile
             read_resp = await test_client.get(f"/users/{user_uuid}")
             assert read_resp.status_code == 200
-            
+
             # Update profile
             update_data = {"age": 26 + user_id}
             update_resp = await test_client.patch(f"/users/{user_uuid}", json=update_data)
             assert update_resp.status_code == 200
-            
+
             # List users
             list_resp = await test_client.get("/users?limit=100")
             assert list_resp.status_code == 200
-            
+
             return user_uuid
 
         # When: All users perform operations concurrently
         start_time = time.time()
-        user_ids = await asyncio.gather(*[
-            user_journey(i) for i in range(num_users)
-        ])
+        user_ids = await asyncio.gather(*[user_journey(i) for i in range(num_users)])
         duration = time.time() - start_time
 
         # Then: All operations complete successfully
         assert len(user_ids) == num_users
         assert len(set(user_ids)) == num_users  # All unique IDs
-        
+
         # Performance is reasonable
         assert duration < 10.0  # Should complete within 10 seconds
 
@@ -138,7 +137,7 @@ class TestPerformanceWorkflows:
             # Update non-existent user
             test_client.put(f"/users/{str(uuid.uuid4())}", json={"name": "Ghost"}),
         ]
-        
+
         error_responses = await asyncio.gather(*error_operations, return_exceptions=True)
 
         # Then: Errors are handled gracefully
@@ -159,11 +158,10 @@ class TestPerformanceWorkflows:
         THEN the application should handle timeouts appropriately
         """
         # Given: User has a short timeout requirement
-        
+
         # When: Operation would exceed timeout
         timeout_response = await test_client.get(
-            "/slow_query",
-            headers={"X-Request-Timeout": "0.5"}  # 500ms timeout
+            "/slow_query", headers={"X-Request-Timeout": "0.5"}  # 500ms timeout
         )
 
         # Then: Timeout is detected and handled
@@ -172,8 +170,7 @@ class TestPerformanceWorkflows:
 
         # When: Adequate timeout is provided
         success_response = await test_client.get(
-            "/slow_query",
-            headers={"X-Request-Timeout": "10.0"}  # 10s timeout
+            "/slow_query", headers={"X-Request-Timeout": "10.0"}  # 10s timeout
         )
 
         # Then: Operation completes successfully
@@ -189,20 +186,15 @@ class TestPerformanceWorkflows:
         # Given: Multiple users to create
         batch_size = 20
         users_data = [
-            {
-                "name": f"Batch User {i}",
-                "email": f"batch{i}@test.com",
-                "age": 30 + i
-            }
+            {"name": f"Batch User {i}", "email": f"batch{i}@test.com", "age": 30 + i}
             for i in range(batch_size)
         ]
 
         # When: Creating users individually
         start_individual = time.time()
-        individual_responses = await asyncio.gather(*[
-            test_client.post("/users", json=user_data)
-            for user_data in users_data
-        ])
+        individual_responses = await asyncio.gather(
+            *[test_client.post("/users", json=user_data) for user_data in users_data]
+        )
         individual_time = time.time() - start_individual
 
         # When: Creating users in batch

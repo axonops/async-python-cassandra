@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 
 @pytest.mark.acceptance
@@ -20,19 +20,21 @@ class TestErrorHandlingWorkflows:
     @pytest_asyncio.fixture
     async def fastapi_app(self):
         """Create FastAPI application for testing."""
-        import sys
         import os
-        
+        import sys
+
         # Add examples directory to path
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../examples/fastapi_app"))
-        
+
         from main import app
+
         return app
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
         """Create test client for FastAPI app."""
-        async with AsyncClient(app=fastapi_app, base_url="http://test") as client:
+        transport = ASGITransport(app=fastapi_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 
     @pytest.mark.asyncio
@@ -43,11 +45,9 @@ class TestErrorHandlingWorkflows:
         THEN they should receive clear, actionable error messages
         """
         # When: Invalid email format
-        invalid_email_response = await test_client.post("/users", json={
-            "name": "Test User",
-            "email": "not-an-email",
-            "age": 25
-        })
+        invalid_email_response = await test_client.post(
+            "/users", json={"name": "Test User", "email": "not-an-email", "age": 25}
+        )
 
         # Then: Clear validation error
         assert invalid_email_response.status_code == 422
@@ -55,20 +55,22 @@ class TestErrorHandlingWorkflows:
         assert any("email" in str(error).lower() for error in error_detail)
 
         # When: Missing required field
-        missing_field_response = await test_client.post("/users", json={
-            "name": "Test User",
-            "age": 25
-        })
+        missing_field_response = await test_client.post(
+            "/users", json={"name": "Test User", "age": 25}
+        )
 
         # Then: Clear error about missing field
         assert missing_field_response.status_code == 422
 
         # When: Invalid data type
-        invalid_type_response = await test_client.post("/users", json={
-            "name": "Test User",
-            "email": "test@example.com",
-            "age": "twenty-five"  # Should be integer
-        })
+        invalid_type_response = await test_client.post(
+            "/users",
+            json={
+                "name": "Test User",
+                "email": "test@example.com",
+                "age": "twenty-five",  # Should be integer
+            },
+        )
 
         # Then: Type error is clear
         assert invalid_type_response.status_code == 422
@@ -89,9 +91,9 @@ class TestErrorHandlingWorkflows:
         assert "User not found" in missing_user_response.json()["detail"]
 
         # When: Updating non-existent user
-        update_missing_response = await test_client.put(f"/users/{fake_id}", json={
-            "name": "Updated Name"
-        })
+        update_missing_response = await test_client.put(
+            f"/users/{fake_id}", json={"name": "Updated Name"}
+        )
 
         # Then: Consistent 404 error
         assert update_missing_response.status_code == 404
@@ -111,30 +113,24 @@ class TestErrorHandlingWorkflows:
         THEN the system should handle them safely
         """
         # Given: A user exists
-        create_response = await test_client.post("/users", json={
-            "name": "Concurrent Test",
-            "email": "concurrent@test.com",
-            "age": 30
-        })
+        create_response = await test_client.post(
+            "/users", json={"name": "Concurrent Test", "email": "concurrent@test.com", "age": 30}
+        )
         user_id = create_response.json()["id"]
 
         # When: Multiple concurrent updates
         async def update_user(field, value):
             return await test_client.patch(f"/users/{user_id}", json={field: value})
 
-        update_tasks = [
-            update_user("name", f"Updated Name {i}")
-            for i in range(5)
-        ]
-        update_tasks.extend([
-            update_user("age", 30 + i)
-            for i in range(5)
-        ])
+        update_tasks = [update_user("name", f"Updated Name {i}") for i in range(5)]
+        update_tasks.extend([update_user("age", 30 + i) for i in range(5)])
 
         responses = await asyncio.gather(*update_tasks, return_exceptions=True)
 
         # Then: All updates complete (last write wins)
-        successful_updates = [r for r in responses if not isinstance(r, Exception) and r.status_code == 200]
+        successful_updates = [
+            r for r in responses if not isinstance(r, Exception) and r.status_code == 200
+        ]
         assert len(successful_updates) == 10
 
         # Final state is consistent
@@ -156,11 +152,9 @@ class TestErrorHandlingWorkflows:
         assert "Invalid UUID" in invalid_uuid_response.json()["detail"]
 
         # When: Update with no fields
-        create_response = await test_client.post("/users", json={
-            "name": "Test User",
-            "email": "test@example.com",
-            "age": 25
-        })
+        create_response = await test_client.post(
+            "/users", json={"name": "Test User", "email": "test@example.com", "age": 25}
+        )
         user_id = create_response.json()["id"]
 
         empty_update_response = await test_client.put(f"/users/{user_id}", json={})

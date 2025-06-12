@@ -7,7 +7,7 @@ and understand their application's behavior in production.
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 
 @pytest.mark.acceptance
@@ -17,19 +17,21 @@ class TestMonitoringWorkflows:
     @pytest_asyncio.fixture
     async def fastapi_app(self):
         """Create FastAPI application for testing."""
-        import sys
         import os
-        
+        import sys
+
         # Add examples directory to path
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../examples/fastapi_app"))
-        
+
         from main import app
+
         return app
 
     @pytest_asyncio.fixture
     async def test_client(self, fastapi_app):
         """Create test client for FastAPI app."""
-        async with AsyncClient(app=fastapi_app, base_url="http://test") as client:
+        transport = ASGITransport(app=fastapi_app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 
     @pytest.mark.asyncio
@@ -45,7 +47,7 @@ class TestMonitoringWorkflows:
         # Then: Health status is available
         assert health_response.status_code == 200
         health_data = health_response.json()
-        
+
         assert "status" in health_data
         assert "cassandra_connected" in health_data
         assert "timestamp" in health_data
@@ -64,17 +66,17 @@ class TestMonitoringWorkflows:
         # Then: Comprehensive metrics are available
         assert metrics_response.status_code == 200
         metrics = metrics_response.json()
-        
+
         assert "total_requests" in metrics
         assert "query_performance" in metrics
         assert "cassandra_connections" in metrics
-        
+
         # Performance metrics structure
         perf = metrics["query_performance"]
         assert "avg_response_time_ms" in perf
         assert "p95_response_time_ms" in perf
         assert "p99_response_time_ms" in perf
-        
+
         # Connection pool metrics
         connections = metrics["cassandra_connections"]
         assert "active" in connections
@@ -89,12 +91,15 @@ class TestMonitoringWorkflows:
         THEN metadata about the operation should be available
         """
         # Given: Some test data
-        await test_client.post("/users/batch", json={
-            "users": [
-                {"name": f"Meta User {i}", "email": f"meta{i}@test.com", "age": 25}
-                for i in range(10)
-            ]
-        })
+        await test_client.post(
+            "/users/batch",
+            json={
+                "users": [
+                    {"name": f"Meta User {i}", "email": f"meta{i}@test.com", "age": 25}
+                    for i in range(10)
+                ]
+            },
+        )
 
         # When: Streaming operation with metadata
         stream_response = await test_client.get("/users/stream?limit=10&fetch_size=5")
@@ -102,7 +107,7 @@ class TestMonitoringWorkflows:
         # Then: Metadata is provided
         assert stream_response.status_code == 200
         result = stream_response.json()
-        
+
         metadata = result["metadata"]
         assert metadata["streaming_enabled"] is True
         assert "total_returned" in metadata
