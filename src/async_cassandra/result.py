@@ -69,8 +69,7 @@ class AsyncResultHandler:
             self._loop = asyncio.get_running_loop()
             self._future = self._loop.create_future()
 
-        result = await self._future
-        return result  # type: ignore[no-any-return]
+        return await self._future
 
 
 class AsyncResultSet:
