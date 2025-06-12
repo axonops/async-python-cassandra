@@ -64,8 +64,8 @@ class TestNetworkFailures:
                 timeout=0.001,  # 1ms timeout - should definitely timeout
             )
             pytest.fail("Query should have timed out")
-        except OperationTimedOut:
-            # Expected behavior
+        except (OperationTimedOut, asyncio.TimeoutError):
+            # Expected behavior - may be either depending on where timeout occurs
             pass
 
     @pytest.mark.asyncio

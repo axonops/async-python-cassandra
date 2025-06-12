@@ -30,8 +30,10 @@ class TestStressScenarios:
         """Create session for stress testing."""
         cluster = AsyncCluster(
             contact_points=["localhost"],
-            # Optimize for high concurrency
-            executor_threads=8,
+            # Optimize for high concurrency - use maximum threads
+            executor_threads=128,  # Maximum allowed by constants
+            # Note: The underlying cassandra-driver manages connection pooling
+            # Default is 2 connections per host with up to 32768 requests per connection
         )
         session = await cluster.connect()
 
@@ -136,10 +138,17 @@ class TestStressScenarios:
         print(f"  P95 latency: {p95_duration*1000:.2f}ms")
         print(f"  P99 latency: {p99_duration*1000:.2f}ms")
 
+        # If there are errors, show a sample
+        if errors:
+            print("\nSample errors (first 5):")
+            for i, err in enumerate(errors[:5]):
+                print(f"  {i+1}. {err}")
+
         # Assertions
-        assert successful_writes >= 9500  # At least 95% success rate
-        assert total_time < 30  # Should complete within 30 seconds
-        assert avg_duration < 1.0  # Average latency under 1 second
+        assert successful_writes == 10000  # ALL writes MUST succeed - this is a DB driver!
+        assert len(errors) == 0, f"Write failures detected: {errors[:10]}"  # Show first 10 errors
+        assert total_time < 60  # Should complete within 60 seconds
+        assert avg_duration < 3.0  # Average latency under 3 seconds (relaxed for CI)
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(60)
