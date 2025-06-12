@@ -14,11 +14,7 @@ import time
 import uuid
 
 import pytest
-from cassandra import (
-    OperationTimedOut,
-    Unavailable,
-    WriteTimeout,
-)
+from cassandra import OperationTimedOut, Unavailable, WriteTimeout
 from cassandra.cluster import NoHostAvailable
 from cassandra.query import ConsistencyLevel, SimpleStatement
 

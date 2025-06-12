@@ -288,7 +288,6 @@ async def stream_users_advanced(
     fetch_size: int = Query(100, ge=10, le=5000),
     max_pages: Optional[int] = Query(None, ge=1, le=1000),
     timeout_seconds: Optional[float] = Query(None, ge=1.0, le=300.0),
-    max_memory_mb: Optional[int] = Query(None, ge=1, le=1000),
 ):
     """Advanced streaming with all configuration options."""
     try:
@@ -297,7 +296,6 @@ async def stream_users_advanced(
             fetch_size=fetch_size,
             max_pages=max_pages,
             timeout_seconds=timeout_seconds,
-            max_memory_mb=max_memory_mb,
         )
 
         # Track streaming progress
@@ -330,8 +328,8 @@ async def stream_users_advanced(
                     "email": row.email,
                 })
 
-                # Simulate memory limit check
-                if stream_config.max_memory_mb and len(users) > stream_config.max_memory_mb * 100:
+                # Check if we've reached the limit
+                if limit and len(users) >= limit:
                     break
 
         end_time = datetime.now()
@@ -349,7 +347,6 @@ async def stream_users_advanced(
                     "fetch_size": fetch_size,
                     "max_pages": max_pages,
                     "timeout_seconds": timeout_seconds,
-                    "max_memory_mb": max_memory_mb,
                 },
             },
         }

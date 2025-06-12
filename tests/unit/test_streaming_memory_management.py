@@ -3,7 +3,6 @@ Test memory management and resource cleanup in streaming.
 """
 
 import asyncio
-import gc
 from unittest.mock import Mock
 
 import pytest
@@ -39,7 +38,7 @@ class TestStreamingMemoryManagement:
 
     @pytest.mark.asyncio
     async def test_abandoned_iterator_cleanup(self):
-        """Test that abandoned iterators clean up their callbacks."""
+        """Test that abandoned iterators clean up their callbacks when closed."""
         # Create mock response future
         response_future = Mock()
         response_future.has_more_pages = True
@@ -50,13 +49,14 @@ class TestStreamingMemoryManagement:
         stream = AsyncStreamingResultSet(response_future)
         stream._handle_page([1, 2, 3])
 
-        # Manually trigger deletion logic
-        stream.__del__()
+        # Close the stream to trigger cleanup
+        await stream.close()
 
         # Verify cleanup was called
         response_future.clear_callbacks.assert_called()
         assert len(stream._current_page) == 0
-        assert len(stream._active_callbacks) == 0
+        assert stream._closed
+        assert stream._exhausted
 
     @pytest.mark.asyncio
     async def test_multiple_context_manager_entries(self):
@@ -107,19 +107,23 @@ class TestStreamingMemoryManagement:
         response_future.clear_callbacks.assert_called()
 
     @pytest.mark.asyncio
-    async def test_memory_limit_enforcement(self):
-        """Test that memory limits are respected."""
-        # Create config with memory limit
-        config = StreamConfig(fetch_size=1000, max_memory_mb=1)  # Very small limit for testing
+    async def test_page_limit_enforcement(self):
+        """Test that page limits are respected."""
+        # Create config with page limit
+        config = StreamConfig(fetch_size=1000, max_pages=2)  # Small limit for testing
 
         response_future = Mock()
         response_future.has_more_pages = True
+        response_future.start_fetching_next_page = Mock()
 
         stream = AsyncStreamingResultSet(response_future, config)
 
-        # TODO: Implement actual memory limit enforcement in the streaming class
-        # For now, just verify the config is stored
-        assert stream.config.max_memory_mb == 1
+        # Simulate receiving multiple pages
+        stream._handle_page([1, 2, 3])  # Page 1
+        assert not stream._exhausted
+
+        stream._handle_page([4, 5, 6])  # Page 2 - should hit limit
+        assert stream._exhausted  # Should be exhausted after max_pages
 
     @pytest.mark.asyncio
     async def test_timeout_cleanup(self):
@@ -204,20 +208,22 @@ class TestStreamingMemoryManagement:
         assert len(iterations) > 0
         assert stream._closed
 
-    def test_weak_reference_cleanup(self):
-        """Test that weak references don't prevent garbage collection."""
+    def test_callback_cleanup_on_close(self):
+        """Test that callbacks are properly cleaned up on close."""
         response_future = Mock()
+        response_future.clear_callbacks = Mock()
+        response_future.has_more_pages = False
+        response_future.add_callbacks = Mock()
+
         stream = AsyncStreamingResultSet(response_future)
 
-        # Add some mock callbacks to weak set
-        callback1 = Mock()
-        callback2 = Mock()
-        stream._active_callbacks.add(callback1)
-        stream._active_callbacks.add(callback2)
+        # Verify callbacks were registered
+        response_future.add_callbacks.assert_called_once()
 
-        # Delete one callback
-        del callback1
-        gc.collect()
+        # Close the stream asynchronously
+        import asyncio
 
-        # Weak set should only have one item now
-        assert len(stream._active_callbacks) == 1
+        asyncio.run(stream.close())
+
+        # Verify callbacks were cleaned up
+        response_future.clear_callbacks.assert_called()
