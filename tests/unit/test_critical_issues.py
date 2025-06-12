@@ -92,8 +92,14 @@ class TestAsyncResultHandlerThreadSafety:
             try:
                 mock_future = Mock()
                 mock_future.has_more_pages = False
+                mock_future.add_callbacks = Mock()
+                mock_future.timeout = None
 
                 handler = AsyncResultHandler(mock_future)
+
+                # Start get_result to create the future
+                result_task = asyncio.create_task(handler.get_result())
+                await asyncio.sleep(0.01)  # Let it initialize
 
                 # Simulate callback from driver thread
                 def driver_callback():
@@ -110,9 +116,13 @@ class TestAsyncResultHandlerThreadSafety:
 
                 # Verify thread safety was maintained
                 assert result_thread != threading.current_thread()
-                assert (
-                    call_soon_threadsafe_used
-                ), "call_soon_threadsafe should be used for cross-thread calls"
+                # Now call_soon_threadsafe SHOULD be used since we store the loop
+                assert call_soon_threadsafe_used
+
+                # The result task should be completed
+                assert result_task.done()
+                result = await result_task
+                assert len(result.rows) == 3
 
             finally:
                 loop.call_soon_threadsafe = original_call_soon_threadsafe
@@ -348,6 +358,7 @@ class TestErrorHandlingConsistency:
             mock_future = Mock()
             mock_future.add_callbacks = Mock()
             mock_future.has_more_pages = False
+            mock_future.timeout = None  # Add timeout attribute
 
             handler = AsyncResultHandler(mock_future)
             # Simulate error callback being called after init
@@ -397,6 +408,7 @@ class TestErrorHandlingConsistency:
             mock_future = Mock()
             mock_future.add_callbacks = Mock()
             mock_future.has_more_pages = False
+            mock_future.timeout = None  # Add timeout attribute
             result_handler = AsyncResultHandler(mock_future)
             # Simulate error callback being called after init
             result_handler._handle_error(timeout_error)

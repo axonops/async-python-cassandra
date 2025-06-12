@@ -46,11 +46,6 @@ class AsyncStreamingResultSet:
         self.response_future = response_future
         self.config = config or StreamConfig()
 
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # If no event loop is running, we'll get it when needed
-            self._loop = None  # type: ignore[assignment]
         self._current_page: List[Any] = []
         self._current_index = 0
         self._page_number = 0
@@ -67,9 +62,20 @@ class AsyncStreamingResultSet:
 
         # Event to signal when a page is ready (created lazily)
         self._page_ready: Optional[asyncio.Event] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Start fetching the first page
         self._setup_callbacks()
+
+    def _cleanup_callbacks(self) -> None:
+        """Clean up response future callbacks to prevent memory leaks."""
+        try:
+            # Clear callbacks if the method exists
+            if hasattr(self.response_future, "clear_callbacks"):
+                self.response_future.clear_callbacks()
+        except Exception:
+            # Ignore errors during cleanup
+            pass
 
     def _setup_callbacks(self) -> None:
         """Set up callbacks for the current page."""
@@ -80,6 +86,11 @@ class AsyncStreamingResultSet:
 
         This method is called from driver threads, so we need thread safety.
         """
+        # Variables to track callback execution outside lock
+        should_call_callback = False
+        page_number = 0
+        page_size = 0
+
         with self._lock:
             if rows is not None:
                 # Replace the current page (don't accumulate)
@@ -89,12 +100,11 @@ class AsyncStreamingResultSet:
                 self._page_number += 1
                 self._total_rows += len(rows)
 
-                # Call progress callback if provided
+                # Prepare callback data
                 if self.config.page_callback:
-                    try:
-                        self.config.page_callback(self._page_number, len(rows))
-                    except Exception as e:
-                        logger.warning(f"Page callback error: {e}")
+                    should_call_callback = True
+                    page_number = self._page_number
+                    page_size = len(rows)
 
                 # Check if we've reached the page limit
                 if self.config.max_pages and self._page_number >= self.config.max_pages:
@@ -106,16 +116,45 @@ class AsyncStreamingResultSet:
             # Mark first page as ready
             self._first_page_ready = True
 
+        # Call progress callback outside the lock to prevent deadlocks
+        if should_call_callback and self.config.page_callback:
+            try:
+                self.config.page_callback(page_number, page_size)
+            except Exception as e:
+                logger.warning(f"Page callback error: {e}")
+
         # Signal that the page is ready
-        if self._loop and self._page_ready:
-            self._loop.call_soon_threadsafe(self._page_ready.set)
+        # Note: _page_ready might not exist yet if callback fires before first __anext__
+        # In that case, _first_page_ready flag will handle it
+        if self._page_ready is not None:
+            try:
+                # Use stored loop if available, otherwise try to get running loop
+                if self._loop:
+                    self._loop.call_soon_threadsafe(self._page_ready.set)
+                else:
+                    loop = asyncio.get_running_loop()
+                    loop.call_soon_threadsafe(self._page_ready.set)
+            except RuntimeError:
+                # No event loop running
+                pass
 
     def _handle_error(self, exc: Exception) -> None:
         """Handle query execution error."""
         self._error = exc
         self._exhausted = True
-        if self._loop and self._page_ready:
-            self._loop.call_soon_threadsafe(self._page_ready.set)
+        # Clear current page to prevent memory leak
+        self._current_page = []
+        self._current_index = 0
+        if self._page_ready:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(self._page_ready.set)
+            except RuntimeError:
+                # No event loop running
+                pass
+
+        # Clean up callbacks to prevent memory leaks
+        self._cleanup_callbacks()
 
     async def _fetch_next_page(self) -> bool:
         """
@@ -131,11 +170,10 @@ class AsyncStreamingResultSet:
             self._exhausted = True
             return False
 
-        # Ensure we have event loop and page_ready event
-        if not self._loop:
-            self._loop = asyncio.get_running_loop()
+        # Ensure we have page_ready event and store loop
         if self._page_ready is None:
             self._page_ready = asyncio.Event()
+            self._loop = asyncio.get_running_loop()
 
         # Clear the event before fetching
         assert self._page_ready is not None
@@ -160,16 +198,28 @@ class AsyncStreamingResultSet:
 
     async def __anext__(self) -> Any:
         """Get next row from the streaming result set."""
-        # Ensure we have event loop and page_ready event
-        if not self._loop:
-            self._loop = asyncio.get_running_loop()
+        # Ensure we have page_ready event and store the loop
         if self._page_ready is None:
             self._page_ready = asyncio.Event()
+            self._loop = asyncio.get_running_loop()
 
         # Wait for first page if not ready yet
         if not self._first_page_ready:
-            assert self._page_ready is not None
-            await self._page_ready.wait()
+            # Check again in case callback already fired
+            with self._lock:
+                if self._first_page_ready:
+                    # Page is ready, no need to wait
+                    pass
+                elif self._error:
+                    raise self._error
+                else:
+                    # Need to wait for the page
+                    pass
+
+            # Wait outside the lock
+            if not self._first_page_ready:
+                assert self._page_ready is not None
+                await self._page_ready.wait()
 
         # Check for errors first
         if self._error:
@@ -196,16 +246,28 @@ class AsyncStreamingResultSet:
         Yields:
             Lists of row objects (pages).
         """
-        # Ensure we have event loop and page_ready event
-        if not self._loop:
-            self._loop = asyncio.get_running_loop()
+        # Ensure we have page_ready event and store the loop
         if self._page_ready is None:
             self._page_ready = asyncio.Event()
+            self._loop = asyncio.get_running_loop()
 
         # Wait for first page if not ready yet
         if not self._first_page_ready:
-            assert self._page_ready is not None
-            await self._page_ready.wait()
+            # Check again in case callback already fired
+            with self._lock:
+                if self._first_page_ready:
+                    # Page is ready, no need to wait
+                    pass
+                elif self._error:
+                    raise self._error
+                else:
+                    # Need to wait for the page
+                    pass
+
+            # Wait outside the lock
+            if not self._first_page_ready:
+                assert self._page_ready is not None
+                await self._page_ready.wait()
 
         # Yield the current page if it has data
         if self._current_page:
@@ -234,6 +296,8 @@ class AsyncStreamingResultSet:
         self._exhausted = True
         # Note: ResponseFuture doesn't provide a direct cancel method,
         # but setting exhausted will stop fetching new pages
+        # Clean up callbacks when cancelling
+        self._cleanup_callbacks()
 
     def __del__(self) -> None:
         """Cleanup when object is garbage collected."""
@@ -242,6 +306,9 @@ class AsyncStreamingResultSet:
             self._current_page = []
         if hasattr(self, "_active_callbacks"):
             self._active_callbacks.clear()
+        # Clean up any remaining callbacks
+        if hasattr(self, "response_future"):
+            self._cleanup_callbacks()
 
 
 class StreamingResultHandler:
