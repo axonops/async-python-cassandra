@@ -300,12 +300,12 @@ class TestRetryPolicyIdempotency:
         """Test retry behavior for different write types."""
         policy = AsyncRetryPolicy(max_retries=3)
 
-        # Even with is_idempotent=True, only SIMPLE and BATCH should retry
+        # Even with is_idempotent=True, only SIMPLE, BATCH, and UNLOGGED_BATCH should retry
         write_types_should_retry = {
             "SIMPLE": True,
             "BATCH": True,
+            "UNLOGGED_BATCH": True,  # Now retried when idempotent
             "COUNTER": False,  # Counter updates should never retry
-            "UNLOGGED_BATCH": False,  # Not in the allowed list
             "CAS": False,  # Compare-and-swap should not retry
             "UNKNOWN": False,  # Unknown types should not retry
         }

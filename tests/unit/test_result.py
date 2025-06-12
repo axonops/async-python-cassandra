@@ -18,6 +18,7 @@ class TestAsyncResultHandler:
         future = Mock()
         future.has_more_pages = False
         future.add_callbacks = Mock()
+        future.timeout = None  # Add timeout attribute for new timeout handling
         return future
 
     @pytest.mark.asyncio

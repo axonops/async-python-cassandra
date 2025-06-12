@@ -3,18 +3,21 @@ Async session management for Cassandra connections.
 """
 
 import asyncio
+import logging
 import time
 from typing import Any, Dict, Optional
 
 from cassandra import InvalidRequest, OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
-from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Cluster, Session
+from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, Cluster, NoHostAvailable, Session
 from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
 
 from .base import AsyncCloseable, AsyncContextManageable
-from .exceptions import ConnectionError, QueryError
+from .exceptions import QueryError
 from .metrics import MetricsMiddleware
 from .result import AsyncResultHandler, AsyncResultSet
 from .streaming import AsyncStreamingResultSet, StreamingResultHandler
+
+logger = logging.getLogger(__name__)
 
 
 class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
@@ -35,6 +38,46 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         super().__init__()
         self._session = session
         self._metrics = metrics
+
+    def _record_metrics_async(
+        self,
+        query_str: str,
+        duration: float,
+        success: bool,
+        error_type: Optional[str],
+        parameters_count: int,
+        result_size: int,
+    ) -> None:
+        """
+        Record metrics in a fire-and-forget manner.
+
+        This method creates a background task to record metrics without blocking
+        the main execution flow or preventing exception propagation.
+        """
+        if not self._metrics:
+            return
+
+        async def _record() -> None:
+            try:
+                assert self._metrics is not None  # Type guard for mypy
+                await self._metrics.record_query_metrics(
+                    query=query_str,
+                    duration=duration,
+                    success=success,
+                    error_type=error_type,
+                    parameters_count=parameters_count,
+                    result_size=result_size,
+                )
+            except Exception as e:
+                # Log error but don't propagate - metrics should not break queries
+                logger.warning(f"Failed to record metrics: {e}")
+
+        # Create task without awaiting it
+        try:
+            asyncio.create_task(_record())
+        except RuntimeError:
+            # No event loop running, skip metrics
+            pass
 
     @classmethod
     async def create(
@@ -91,61 +134,76 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         Raises:
             QueryError: If query execution fails.
         """
-        if self.is_closed:
-            raise ConnectionError("Session is closed")
 
-        # Start metrics timing
-        start_time = time.perf_counter()
-        success = False
-        error_type = None
-        result_size = 0
+        # Create the operation to execute atomically
+        async def _execute_operation() -> AsyncResultSet:
+            # Start metrics timing
+            start_time = time.perf_counter()
+            success = False
+            error_type = None
+            result_size = 0
 
-        try:
-            # Fix timeout handling - use _NOT_SET if timeout is None
-            response_future = self._session.execute_async(
-                query,
-                parameters,
-                trace,
-                custom_payload,
-                timeout if timeout is not None else _NOT_SET,
-                execution_profile,
-                paging_state,
-                host,
-                execute_as,
-            )
+            try:
+                # Fix timeout handling - use _NOT_SET if timeout is None
+                response_future = self._session.execute_async(
+                    query,
+                    parameters,
+                    trace,
+                    custom_payload,
+                    timeout if timeout is not None else _NOT_SET,
+                    execution_profile,
+                    paging_state,
+                    host,
+                    execute_as,
+                )
 
-            handler = AsyncResultHandler(response_future)
-            result = await handler.get_result()
+                handler = AsyncResultHandler(response_future)
+                # Pass timeout to get_result if specified
+                query_timeout = timeout if timeout is not None and timeout != _NOT_SET else None
+                result = await handler.get_result(timeout=query_timeout)
 
-            success = True
-            result_size = len(result.rows) if hasattr(result, "rows") else 0
-            return result
+                success = True
+                result_size = len(result.rows) if hasattr(result, "rows") else 0
+                return result
 
-        except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
-            # Re-raise Cassandra exceptions without wrapping
-            error_type = type(e).__name__
-            raise
-        except Exception as e:
-            # Only wrap non-Cassandra exceptions
-            error_type = type(e).__name__
-            raise QueryError(f"Query execution failed: {str(e)}") from e
-        finally:
-            # Record metrics if middleware is available
-            if self._metrics:
+            except (
+                InvalidRequest,
+                Unavailable,
+                ReadTimeout,
+                WriteTimeout,
+                OperationTimedOut,
+                NoHostAvailable,
+            ) as e:
+                # Re-raise Cassandra exceptions without wrapping
+                error_type = type(e).__name__
+                raise
+            except asyncio.TimeoutError:
+                # Re-raise timeout errors without wrapping
+                error_type = "TimeoutError"
+                raise
+            except Exception as e:
+                # Only wrap non-Cassandra exceptions
+                error_type = type(e).__name__
+                raise QueryError(f"Query execution failed: {str(e)}") from e
+            finally:
+                # Record metrics in a fire-and-forget manner
                 duration = time.perf_counter() - start_time
                 query_str = (
                     str(query) if isinstance(query, (SimpleStatement, PreparedStatement)) else query
                 )
                 params_count = len(parameters) if parameters else 0
 
-                await self._metrics.record_query_metrics(
-                    query=query_str,
+                self._record_metrics_async(
+                    query_str=query_str,
                     duration=duration,
                     success=success,
                     error_type=error_type,
                     parameters_count=params_count,
                     result_size=result_size,
                 )
+
+        # Execute atomically with closed check
+        return await self._execute_if_not_closed(_execute_operation)
 
     async def execute_stream(
         self,
@@ -198,68 +256,83 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             async for page in result.pages():
                 process_batch(page)
         """
-        if self.is_closed:
-            raise ConnectionError("Session is closed")
 
-        # Start metrics timing for consistency with execute()
-        start_time = time.perf_counter()
-        success = False
-        error_type = None
+        # Create the operation to execute atomically
+        async def _execute_stream_operation() -> AsyncStreamingResultSet:
+            # Start metrics timing for consistency with execute()
+            start_time = time.perf_counter()
+            success = False
+            error_type = None
 
-        try:
-            # Apply fetch_size from stream_config if provided
-            if stream_config and hasattr(stream_config, "fetch_size"):
-                # If query is a string, create a SimpleStatement with fetch_size
-                if isinstance(query, str):
-                    from cassandra.query import SimpleStatement
+            try:
+                # Apply fetch_size from stream_config if provided
+                query_to_execute = query
+                if stream_config and hasattr(stream_config, "fetch_size"):
+                    # If query is a string, create a SimpleStatement with fetch_size
+                    if isinstance(query_to_execute, str):
+                        from cassandra.query import SimpleStatement
 
-                    query = SimpleStatement(query, fetch_size=stream_config.fetch_size)
-                # If it's already a statement, try to set fetch_size
-                elif hasattr(query, "fetch_size"):
-                    query.fetch_size = stream_config.fetch_size
+                        query_to_execute = SimpleStatement(
+                            query_to_execute, fetch_size=stream_config.fetch_size
+                        )
+                    # If it's already a statement, try to set fetch_size
+                    elif hasattr(query_to_execute, "fetch_size"):
+                        query_to_execute.fetch_size = stream_config.fetch_size
 
-            response_future = self._session.execute_async(
-                query,
-                parameters,
-                trace,
-                custom_payload,
-                timeout if timeout is not None else _NOT_SET,
-                execution_profile,
-                paging_state,
-                host,
-                execute_as,
-            )
+                response_future = self._session.execute_async(
+                    query_to_execute,
+                    parameters,
+                    trace,
+                    custom_payload,
+                    timeout if timeout is not None else _NOT_SET,
+                    execution_profile,
+                    paging_state,
+                    host,
+                    execute_as,
+                )
 
-            handler = StreamingResultHandler(response_future, stream_config)
-            result = await handler.get_streaming_result()
-            success = True
-            return result
+                handler = StreamingResultHandler(response_future, stream_config)
+                result = await handler.get_streaming_result()
+                success = True
+                return result
 
-        except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
-            # Re-raise Cassandra exceptions without wrapping (consistent with execute())
-            error_type = type(e).__name__
-            raise
-        except Exception as e:
-            # Only wrap non-Cassandra exceptions (consistent with execute())
-            error_type = type(e).__name__
-            raise QueryError(f"Streaming query execution failed: {str(e)}") from e
-        finally:
-            # Record metrics if middleware is available (consistent with execute())
-            if self._metrics:
+            except (
+                InvalidRequest,
+                Unavailable,
+                ReadTimeout,
+                WriteTimeout,
+                OperationTimedOut,
+                NoHostAvailable,
+            ) as e:
+                # Re-raise Cassandra exceptions without wrapping (consistent with execute())
+                error_type = type(e).__name__
+                raise
+            except Exception as e:
+                # Only wrap non-Cassandra exceptions (consistent with execute())
+                error_type = type(e).__name__
+                raise QueryError(f"Streaming query execution failed: {str(e)}") from e
+            finally:
+                # Record metrics in a fire-and-forget manner (consistent with execute())
                 duration = time.perf_counter() - start_time
+                # Import here to avoid circular imports and handle the case where it wasn't imported above
+                from cassandra.query import PreparedStatement, SimpleStatement
+
                 query_str = (
                     str(query) if isinstance(query, (SimpleStatement, PreparedStatement)) else query
                 )
                 params_count = len(parameters) if parameters else 0
 
-                await self._metrics.record_query_metrics(
-                    query=query_str,
+                self._record_metrics_async(
+                    query_str=query_str,
                     duration=duration,
                     success=success,
                     error_type=error_type,
                     parameters_count=params_count,
                     result_size=0,  # Streaming doesn't know size upfront
                 )
+
+        # Execute atomically with closed check
+        return await self._execute_if_not_closed(_execute_stream_operation)
 
     async def execute_batch(
         self,
@@ -293,41 +366,59 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             execution_profile=execution_profile,
         )
 
-    async def prepare(self, query: str, custom_payload: Any = None) -> PreparedStatement:
+    async def prepare(
+        self, query: str, custom_payload: Any = None, timeout: Optional[float] = None
+    ) -> PreparedStatement:
         """
         Prepare a CQL statement asynchronously.
 
         Args:
             query: The query to prepare.
             custom_payload: Custom payload to send with the request.
+            timeout: Timeout in seconds. Defaults to DEFAULT_REQUEST_TIMEOUT.
 
         Returns:
             PreparedStatement that can be executed multiple times.
 
         Raises:
             QueryError: If statement preparation fails.
+            asyncio.TimeoutError: If preparation times out.
         """
-        if self.is_closed:
-            raise ConnectionError("Session is closed")
+        # Import here to avoid circular import
+        from .constants import DEFAULT_REQUEST_TIMEOUT
 
-        try:
-            loop = asyncio.get_event_loop()
+        if timeout is None:
+            timeout = DEFAULT_REQUEST_TIMEOUT
 
-            # Prepare in executor to avoid blocking
-            prepared = await loop.run_in_executor(
-                None, lambda: self._session.prepare(query, custom_payload)
-            )
+        # Create the operation to execute atomically
+        async def _prepare_operation() -> PreparedStatement:
+            try:
+                loop = asyncio.get_event_loop()
 
-            return prepared
-        except (InvalidRequest, OperationTimedOut) as e:
-            raise QueryError(f"Statement preparation failed: {str(e)}") from e
-        except Exception as e:
-            raise QueryError(f"Statement preparation failed: {str(e)}") from e
+                # Prepare in executor to avoid blocking with timeout
+                prepared = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None, lambda: self._session.prepare(query, custom_payload)
+                    ),
+                    timeout=timeout,
+                )
+
+                return prepared
+            except asyncio.TimeoutError:
+                raise
+            except (InvalidRequest, OperationTimedOut) as e:
+                raise QueryError(f"Statement preparation failed: {str(e)}") from e
+            except Exception as e:
+                raise QueryError(f"Statement preparation failed: {str(e)}") from e
+
+        # Execute atomically with closed check
+        return await self._execute_if_not_closed(_prepare_operation)
 
     async def _do_close(self) -> None:
         """Perform the actual session shutdown."""
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._session.shutdown)
+        # Use a reasonable timeout for shutdown operations
+        await asyncio.wait_for(loop.run_in_executor(None, self._session.shutdown), timeout=30.0)
 
     @property
     def keyspace(self) -> Optional[str]:

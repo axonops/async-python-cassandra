@@ -6,14 +6,11 @@ They will be skipped if running in environments without proper permissions.
 """
 
 import asyncio
-import subprocess
 import time
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 from cassandra import OperationTimedOut, ReadTimeout, Unavailable, WriteTimeout
-from cassandra.cluster import NoHostAvailable
 
 from async_cassandra import AsyncCassandraSession, AsyncCluster, AsyncRetryPolicy
 
@@ -67,8 +64,8 @@ class TestNetworkFailures:
                 timeout=0.001,  # 1ms timeout - should definitely timeout
             )
             pytest.fail("Query should have timed out")
-        except OperationTimedOut:
-            # Expected behavior
+        except (OperationTimedOut, asyncio.TimeoutError):
+            # Expected behavior - may be either depending on where timeout occurs
             pass
 
     @pytest.mark.asyncio
@@ -200,7 +197,7 @@ class TestNetworkFailures:
         successful = sum(1 for _, count, error in results if error is None)
         failed = sum(1 for _, count, error in results if error is not None)
 
-        print(f"\nConnection pool test results:")
+        print("\nConnection pool test results:")
         print(f"  Successful queries: {successful}")
         print(f"  Failed queries: {failed}")
 
@@ -344,7 +341,7 @@ class TestNetworkFailures:
         successful = sum(1 for r in results if not isinstance(r, Exception))
         failed = sum(1 for r in results if isinstance(r, Exception))
 
-        print(f"\nRecovery test results:")
+        print("\nRecovery test results:")
         print(f"  Successful queries: {successful}")
         print(f"  Failed queries: {failed}")
 

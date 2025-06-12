@@ -92,5 +92,11 @@ async def cassandra_session(cassandra_cluster):
 
     yield session
 
-    # Cleanup
+    # Cleanup - truncate tables to ensure clean state for next test
+    try:
+        await session.execute("TRUNCATE users")
+    except Exception:
+        # Ignore errors during cleanup
+        pass
+
     await session.close()

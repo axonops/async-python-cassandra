@@ -32,19 +32,23 @@ class TestThreadSafetyIssues:
         session = await cluster.connect()
 
         # Create test keyspace and table
-        await session.execute("""
+        await session.execute(
+            """
             CREATE KEYSPACE IF NOT EXISTS thread_safety_test
             WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
-        """)
+        """
+        )
         await session.set_keyspace("thread_safety_test")
 
         await session.execute("DROP TABLE IF EXISTS test_data")
-        await session.execute("""
+        await session.execute(
+            """
             CREATE TABLE test_data (
                 id INT PRIMARY KEY,
                 data TEXT
             )
-        """)
+        """
+        )
 
         yield session
 
@@ -64,9 +68,7 @@ class TestThreadSafetyIssues:
         insert_tasks = []
         for i in range(1000):
             stmt = "INSERT INTO test_data (id, data) VALUES (%s, %s)"
-            insert_tasks.append(
-                async_session.execute(stmt, (i, f"data_{i}" * 100))
-            )
+            insert_tasks.append(async_session.execute(stmt, (i, f"data_{i}" * 100)))
 
         await asyncio.gather(*insert_tasks)
 
@@ -77,9 +79,7 @@ class TestThreadSafetyIssues:
         async def fetch_with_paging():
             try:
                 # Use small fetch_size to force multiple pages
-                result = await async_session.execute(
-                    "SELECT * FROM test_data LIMIT 1000"
-                )
+                result = await async_session.execute("SELECT * FROM test_data LIMIT 1000")
                 results.append(len(result.rows))
             except Exception as e:
                 errors.append(str(e))
@@ -136,6 +136,7 @@ class TestThreadSafetyIssues:
         WHEN they interact with asyncio event loop
         THEN thread-safe mechanisms should be used
         """
+
         async def run_test():
             # Track which threads callbacks are called from
             callback_threads = []
@@ -169,8 +170,9 @@ class TestThreadSafetyIssues:
 
             # Verify callbacks came from different threads
             assert len(callback_threads) == 5
-            assert any(t != main_thread for t in callback_threads), \
-                "Callbacks should come from driver threads"
+            assert any(
+                t != main_thread for t in callback_threads
+            ), "Callbacks should come from driver threads"
 
             # The current implementation has issues here
             # It should use call_soon_threadsafe consistently
@@ -187,12 +189,14 @@ class TestMemoryLeakIssues:
         WHEN pages are processed and discarded
         THEN memory should be properly released
         """
+
         async def run_test():
             # Track page counts instead of weak references
             pages_created = []
-            
+
             class PageTracker:
                 """Wrapper to track page lifecycle"""
+
                 def __init__(self, page_data):
                     self.data = page_data
                     pages_created.append(self)
@@ -200,7 +204,7 @@ class TestMemoryLeakIssues:
             class InstrumentedStreamingResultSet(AsyncStreamingResultSet):
                 def _handle_page(self, rows):
                     # Verify only one page is held at a time
-                    if hasattr(self, '_current_page') and self._current_page:
+                    if hasattr(self, "_current_page") and self._current_page:
                         # Previous page should be replaced
                         assert len(self._current_page) <= 100
                     super()._handle_page(rows)
@@ -239,7 +243,7 @@ class TestMemoryLeakIssues:
 
             # Verify all rows were processed
             assert processed_rows == 1000  # 10 pages * 100 rows
-            
+
             # Verify handler only holds one page
             assert len(handler._current_page) <= 100
 
@@ -251,6 +255,7 @@ class TestMemoryLeakIssues:
         WHEN objects reference each other
         THEN circular references should be avoided to prevent leaks
         """
+
         async def run_test():
             # Track object creation and cleanup
             created_objects = []
@@ -290,6 +295,7 @@ class TestMemoryLeakIssues:
         WHEN exception occurs during streaming
         THEN all resources should be properly cleaned up
         """
+
         async def run_test():
             # Track resource allocation
             allocated_resources = []
@@ -306,28 +312,31 @@ class TestMemoryLeakIssues:
 
             error_on_page = 3
             current_page = 0
-            handler = None
+            handler_ref = {"handler": None}  # Use dict to allow closure access
 
             def fetch_with_error():
                 nonlocal current_page
                 current_page += 1
 
                 # Allocate some resources
-                resource = ResourceTracker(f"page_{current_page}")
+                resource = ResourceTracker(f"page_{current_page}")  # noqa: F841
 
                 if current_page == error_on_page:
                     # Simulate error through handler
-                    if handler:
-                        handler._handle_error(Exception("Simulated error during fetch"))
+                    if handler_ref["handler"]:
+                        handler_ref["handler"]._handle_error(
+                            Exception("Simulated error during fetch")
+                        )
                     mock_future.has_more_pages = False
                 else:
                     # Normal page
-                    if handler:
-                        handler._handle_page([f"row_{i}" for i in range(10)])
+                    if handler_ref["handler"]:
+                        handler_ref["handler"]._handle_page([f"row_{i}" for i in range(10)])
 
             mock_future.start_fetching_next_page = fetch_with_error
 
             handler = AsyncStreamingResultSet(mock_future)
+            handler_ref["handler"] = handler
             # Initialize with first page
             handler._handle_page([f"row_{i}" for i in range(10)])
 
@@ -399,8 +408,9 @@ class TestErrorHandlingInconsistencies:
         # Both should raise similar errors
         assert execute_error is not None
         assert stream_error is not None
-        assert type(execute_error) == type(stream_error), \
-            f"Different error types: {type(execute_error)} vs {type(stream_error)}"
+        assert type(execute_error) is type(
+            stream_error
+        ), f"Different error types: {type(execute_error)} vs {type(stream_error)}"
 
     @pytest.mark.asyncio
     async def test_timeout_error_handling_consistency(self, async_session):
@@ -410,45 +420,42 @@ class TestErrorHandlingInconsistencies:
         THEN timeout handling should be consistent
         """
         # Create test table
-        await async_session.execute("""
+        await async_session.execute(
+            """
             CREATE KEYSPACE IF NOT EXISTS timeout_test
             WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
-        """)
+        """
+        )
         await async_session.set_keyspace("timeout_test")
 
         await async_session.execute("DROP TABLE IF EXISTS test_timeout")
-        await async_session.execute("""
+        await async_session.execute(
+            """
             CREATE TABLE test_timeout (
                 id INT PRIMARY KEY,
                 data TEXT
             )
-        """)
+        """
+        )
 
         # Insert data
         for i in range(100):
             await async_session.execute(
-                "INSERT INTO test_timeout (id, data) VALUES (%s, %s)",
-                (i, "x" * 1000)
+                "INSERT INTO test_timeout (id, data) VALUES (%s, %s)", (i, "x" * 1000)
             )
 
         # Test timeout in execute()
         execute_timeout_error = None
         try:
             # Very short timeout to force error
-            await async_session.execute(
-                "SELECT * FROM test_timeout",
-                timeout=0.001
-            )
+            await async_session.execute("SELECT * FROM test_timeout", timeout=0.001)
         except Exception as e:
             execute_timeout_error = e
 
         # Test timeout in execute_stream()
         stream_timeout_error = None
         try:
-            result = await async_session.execute_stream(
-                "SELECT * FROM test_timeout",
-                timeout=0.001
-            )
+            result = await async_session.execute_stream("SELECT * FROM test_timeout", timeout=0.001)
             async for row in result:
                 pass
         except Exception as e:
@@ -469,7 +476,7 @@ class TestErrorHandlingInconsistencies:
         from cassandra.cluster import NoHostAvailable
 
         # Mock connection failure
-        with patch.object(async_session._session, 'execute_async') as mock_execute:
+        with patch.object(async_session._session, "execute_async") as mock_execute:
             mock_execute.side_effect = NoHostAvailable("All hosts failed", {})
 
             # Test execute() error propagation

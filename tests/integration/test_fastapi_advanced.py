@@ -5,7 +5,6 @@ These tests cover edge cases, error conditions, and advanced scenarios
 that the basic tests don't cover, following TDD principles.
 """
 
-import asyncio
 import gc
 import os
 import platform
@@ -13,13 +12,10 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import patch
-
-import pytest
-from cassandra.cluster import NoHostAvailable
-from fastapi.testclient import TestClient
 
 import psutil  # Required dependency for advanced testing
+import pytest
+from fastapi.testclient import TestClient
 
 
 class TestFastAPIAdvancedScenarios:
@@ -29,6 +25,7 @@ class TestFastAPIAdvancedScenarios:
     def test_client(self):
         """Create FastAPI test client."""
         from examples.fastapi_app.main import app
+
         with TestClient(app) as client:
             yield client
 
@@ -44,7 +41,7 @@ class TestFastAPIAdvancedScenarios:
             "initial_memory": initial_memory,
             "initial_threads": initial_threads,
             "initial_fds": initial_fds,
-            "process": process
+            "process": process,
         }
 
         # Cleanup
@@ -61,11 +58,7 @@ class TestFastAPIAdvancedScenarios:
 
         # Create test data
         for i in range(1000):
-            user_data = {
-                "name": f"leak_test_user_{i}",
-                "email": f"leak{i}@example.com",
-                "age": 25
-            }
+            user_data = {"name": f"leak_test_user_{i}", "email": f"leak{i}@example.com", "age": 25}
             test_client.post("/users", json=user_data)
 
         memory_readings = []
@@ -109,7 +102,7 @@ class TestFastAPIAdvancedScenarios:
                 user_data = {
                     "name": f"thread_{thread_id}_user",
                     "email": f"thread{thread_id}@example.com",
-                    "age": 20 + thread_id
+                    "age": 20 + thread_id,
                 }
                 create_resp = test_client.post("/users", json=user_data)
                 if create_resp.status_code != 201:
@@ -172,19 +165,19 @@ class TestFastAPIAdvancedScenarios:
         # Test handling of various scenarios
         # Since this is integration test and we don't want to break the real connection,
         # we'll test that the system remains stable after various operations
-        
+
         # Test with large limit
         response = test_client.get("/users?limit=1000")
         assert response.status_code == 200
-        
+
         # Test invalid UUID handling
         response = test_client.get("/users/invalid-uuid")
         assert response.status_code == 400
-        
+
         # Test non-existent user
         response = test_client.get(f"/users/{uuid.uuid4()}")
         assert response.status_code == 404
-        
+
         # Verify system still healthy after various errors
         health_response = test_client.get("/health")
         assert health_response.status_code == 200
@@ -201,11 +194,7 @@ class TestFastAPIAdvancedScenarios:
         for i in range(20):
             start_time = time.time()
 
-            user_data = {
-                "name": f"ps_test_user_{i}",
-                "email": f"ps{i}@example.com",
-                "age": 25
-            }
+            user_data = {"name": f"ps_test_user_{i}", "email": f"ps{i}@example.com", "age": 25}
             response = test_client.post("/users", json=user_data)
             assert response.status_code == 201
 
@@ -227,20 +216,16 @@ class TestFastAPIAdvancedScenarios:
         THEN resources should be properly cleaned up
         """
         # Test with the slow_query endpoint
-        import httpx
 
         # Test timeout behavior with a short timeout header
-        response = test_client.get(
-            "/slow_query",
-            headers={"X-Request-Timeout": "0.5"}
-        )
+        response = test_client.get("/slow_query", headers={"X-Request-Timeout": "0.5"})
         # Should return timeout error
         assert response.status_code == 504
 
         # Verify system still healthy after timeout
         health_response = test_client.get("/health")
         assert health_response.status_code == 200
-        
+
         # Test normal query still works
         response = test_client.get("/users?limit=10")
         assert response.status_code == 200
@@ -256,12 +241,11 @@ class TestFastAPIAdvancedScenarios:
             user_data = {
                 "name": f"paging_user_{i}",
                 "email": f"page{i}@example.com",
-                "age": 20 + (i % 60)
+                "age": 20 + (i % 60),
             }
             test_client.post("/users", json=user_data)
 
         # Test paging through results
-        all_users = []
         page_count = 0
 
         # Stream pages and collect results
@@ -391,7 +375,7 @@ class TestFastAPIAdvancedScenarios:
         assert regular_response.status_code == 200
         regular_data = regular_response.json()
         mem_after_regular = process.memory_info().rss / 1024 / 1024
-        regular_memory_used = mem_after_regular - mem_before_regular
+        mem_after_regular - mem_before_regular
 
         # Streaming (should use less memory)
         gc.collect()
@@ -400,7 +384,7 @@ class TestFastAPIAdvancedScenarios:
         assert stream_response.status_code == 200
         stream_data = stream_response.json()
         mem_after_stream = process.memory_info().rss / 1024 / 1024
-        stream_memory_used = mem_after_stream - mem_before_stream
+        mem_after_stream - mem_before_stream
 
         # Streaming should use less memory (allow some variance)
         # This might not always be true for small datasets, but the pattern is important
@@ -415,22 +399,16 @@ class TestFastAPIAdvancedScenarios:
         """
         # Reset metrics (would need endpoint)
         # Perform known operations
-        operations = {
-            "creates": 5,
-            "reads": 10,
-            "updates": 3,
-            "deletes": 2
-        }
+        operations = {"creates": 5, "reads": 10, "updates": 3, "deletes": 2}
 
         created_ids = []
 
         # Create
         for i in range(operations["creates"]):
-            resp = test_client.post("/users", json={
-                "name": f"metrics_user_{i}",
-                "email": f"metrics{i}@example.com",
-                "age": 25
-            })
+            resp = test_client.post(
+                "/users",
+                json={"name": f"metrics_user_{i}", "email": f"metrics{i}@example.com", "age": 25},
+            )
             if resp.status_code == 201:
                 created_ids.append(resp.json()["id"])
 
@@ -504,48 +482,45 @@ class TestFastAPIAdvancedScenarios:
         # Start a potentially slow operation
         import threading
         import time
-        
+
         slow_response = None
         quick_responses = []
-        
+
         def slow_request():
             nonlocal slow_response
             slow_response = test_client.get("/performance/sync?requests=20")
-        
+
         def quick_request(i):
             response = test_client.get("/health")
             quick_responses.append(response)
-        
+
         # Start slow request in background
         slow_thread = threading.Thread(target=slow_request)
         slow_thread.start()
-        
+
         # Give it a moment to start
         time.sleep(0.1)
-        
+
         # Make quick requests
         quick_threads = []
         for i in range(5):
             t = threading.Thread(target=quick_request, args=(i,))
             quick_threads.append(t)
             t.start()
-        
+
         # Wait for all threads
         for t in quick_threads:
             t.join(timeout=1.0)
         slow_thread.join(timeout=5.0)
-        
+
         # Verify results
         assert len(quick_responses) == 5
         assert all(r.status_code == 200 for r in quick_responses)
         assert slow_response is not None and slow_response.status_code == 200
 
-    @pytest.mark.parametrize("failure_point", [
-        "before_prepare",
-        "after_prepare",
-        "during_execute",
-        "during_fetch"
-    ])
+    @pytest.mark.parametrize(
+        "failure_point", ["before_prepare", "after_prepare", "during_execute", "during_fetch"]
+    )
     def test_failure_recovery_at_different_stages(self, test_client, failure_point):
         """
         GIVEN failures at different stages of query execution
