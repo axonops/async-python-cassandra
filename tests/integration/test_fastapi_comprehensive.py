@@ -153,7 +153,7 @@ class TestFastAPIComprehensive:
         THEN prepared statements should be cached and reused
         """
         # Create a user first
-        user_data = {"username": "test_user", "email": "test@example.com"}
+        user_data = {"name": "test_user", "email": "test@example.com", "age": 25}
         create_response = test_client.post("/users", json=user_data)
         user_id = create_response.json()["id"]
 
@@ -179,7 +179,7 @@ class TestFastAPIComprehensive:
         # Create multiple users in a batch
         batch_data = {
             "users": [
-                {"username": f"batch_user_{i}", "email": f"batch{i}@example.com"}
+                {"name": f"batch_user_{i}", "email": f"batch{i}@example.com", "age": 25 + i}
                 for i in range(5)
             ]
         }
@@ -243,8 +243,9 @@ class TestFastAPIComprehensive:
         """
         # Create user with specific consistency level
         user_data = {
-            "username": f"consistency_test_{consistency_level}",
-            "email": f"test_{consistency_level}@example.com"
+            "name": f"consistency_test_{consistency_level}",
+            "email": f"test_{consistency_level}@example.com",
+            "age": 25
         }
 
         response = test_client.post(

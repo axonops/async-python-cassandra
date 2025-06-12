@@ -201,6 +201,11 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
         if self.is_closed:
             raise ConnectionError("Session is closed")
 
+        # Start metrics timing for consistency with execute()
+        start_time = time.perf_counter()
+        success = False
+        error_type = None
+
         try:
             # Apply fetch_size from stream_config if provided
             if stream_config and hasattr(stream_config, "fetch_size"):
@@ -226,9 +231,35 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             )
 
             handler = StreamingResultHandler(response_future, stream_config)
-            return await handler.get_streaming_result()
+            result = await handler.get_streaming_result()
+            success = True
+            return result
+
         except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
+            # Re-raise Cassandra exceptions without wrapping (consistent with execute())
+            error_type = type(e).__name__
+            raise
+        except Exception as e:
+            # Only wrap non-Cassandra exceptions (consistent with execute())
+            error_type = type(e).__name__
             raise QueryError(f"Streaming query execution failed: {str(e)}") from e
+        finally:
+            # Record metrics if middleware is available (consistent with execute())
+            if self._metrics:
+                duration = time.perf_counter() - start_time
+                query_str = (
+                    str(query) if isinstance(query, (SimpleStatement, PreparedStatement)) else query
+                )
+                params_count = len(parameters) if parameters else 0
+
+                await self._metrics.record_query_metrics(
+                    query=query_str,
+                    duration=duration,
+                    success=success,
+                    error_type=error_type,
+                    parameters_count=params_count,
+                    result_size=0,  # Streaming doesn't know size upfront
+                )
 
     async def execute_batch(
         self,

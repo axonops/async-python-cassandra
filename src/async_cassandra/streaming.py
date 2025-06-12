@@ -7,6 +7,8 @@ without loading all data into memory at once.
 
 import asyncio
 import logging
+import threading
+import weakref
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, List, Optional
 
@@ -44,7 +46,11 @@ class AsyncStreamingResultSet:
         self.response_future = response_future
         self.config = config or StreamConfig()
 
-        self._loop = asyncio.get_running_loop()
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # If no event loop is running, we'll get it when needed
+            self._loop = None
         self._current_page: List[Any] = []
         self._current_index = 0
         self._page_number = 0
@@ -53,8 +59,14 @@ class AsyncStreamingResultSet:
         self._error: Optional[Exception] = None
         self._first_page_ready = False
 
-        # Event to signal when a page is ready
-        self._page_ready = asyncio.Event()
+        # Thread lock for thread-safe operations
+        self._lock = threading.Lock()
+
+        # Track active callbacks with weak references to avoid cycles
+        self._active_callbacks = weakref.WeakSet()
+
+        # Event to signal when a page is ready (created lazily)
+        self._page_ready = None
 
         # Start fetching the first page
         self._setup_callbacks()
@@ -64,38 +76,46 @@ class AsyncStreamingResultSet:
         self.response_future.add_callbacks(callback=self._handle_page, errback=self._handle_error)
 
     def _handle_page(self, rows: Optional[List[Any]]) -> None:
-        """Handle successful page retrieval."""
-        if rows is not None:
-            self._current_page = rows
-            self._current_index = 0
-            self._page_number += 1
-            self._total_rows += len(rows)
+        """Handle successful page retrieval.
 
-            # Call progress callback if provided
-            if self.config.page_callback:
-                try:
-                    self.config.page_callback(self._page_number, len(rows))
-                except Exception as e:
-                    logger.warning(f"Page callback error: {e}")
+        This method is called from driver threads, so we need thread safety.
+        """
+        with self._lock:
+            if rows is not None:
+                # Replace the current page (don't accumulate)
+                # This ensures we only hold one page in memory at a time
+                self._current_page = list(rows)  # Defensive copy
+                self._current_index = 0
+                self._page_number += 1
+                self._total_rows += len(rows)
 
-            # Check if we've reached the page limit
-            if self.config.max_pages and self._page_number >= self.config.max_pages:
+                # Call progress callback if provided
+                if self.config.page_callback:
+                    try:
+                        self.config.page_callback(self._page_number, len(rows))
+                    except Exception as e:
+                        logger.warning(f"Page callback error: {e}")
+
+                # Check if we've reached the page limit
+                if self.config.max_pages and self._page_number >= self.config.max_pages:
+                    self._exhausted = True
+            else:
+                self._current_page = []
                 self._exhausted = True
-        else:
-            self._current_page = []
-            self._exhausted = True
 
-        # Mark first page as ready
-        self._first_page_ready = True
+            # Mark first page as ready
+            self._first_page_ready = True
 
         # Signal that the page is ready
-        self._loop.call_soon_threadsafe(self._page_ready.set)
+        if self._loop and self._page_ready:
+            self._loop.call_soon_threadsafe(self._page_ready.set)
 
     def _handle_error(self, exc: Exception) -> None:
         """Handle query execution error."""
         self._error = exc
         self._exhausted = True
-        self._loop.call_soon_threadsafe(self._page_ready.set)
+        if self._loop and self._page_ready:
+            self._loop.call_soon_threadsafe(self._page_ready.set)
 
     async def _fetch_next_page(self) -> bool:
         """
@@ -110,6 +130,12 @@ class AsyncStreamingResultSet:
         if not self.response_future.has_more_pages:
             self._exhausted = True
             return False
+
+        # Ensure we have event loop and page_ready event
+        if not self._loop:
+            self._loop = asyncio.get_running_loop()
+        if not self._page_ready:
+            self._page_ready = asyncio.Event()
 
         # Clear the event before fetching
         self._page_ready.clear()
@@ -132,6 +158,12 @@ class AsyncStreamingResultSet:
 
     async def __anext__(self) -> Any:
         """Get next row from the streaming result set."""
+        # Ensure we have event loop and page_ready event
+        if not self._loop:
+            self._loop = asyncio.get_running_loop()
+        if not self._page_ready:
+            self._page_ready = asyncio.Event()
+
         # Wait for first page if not ready yet
         if not self._first_page_ready:
             await self._page_ready.wait()
@@ -146,8 +178,8 @@ class AsyncStreamingResultSet:
             self._current_index += 1
             return row
 
-        # If current page is exhausted, try to fetch next page
-        if await self._fetch_next_page():
+        # If current page is exhausted and not cancelled, try to fetch next page
+        if not self._exhausted and await self._fetch_next_page():
             # Recursively call to get the first row from new page
             return await self.__anext__()
 
@@ -161,6 +193,12 @@ class AsyncStreamingResultSet:
         Yields:
             Lists of row objects (pages).
         """
+        # Ensure we have event loop and page_ready event
+        if not self._loop:
+            self._loop = asyncio.get_running_loop()
+        if not self._page_ready:
+            self._page_ready = asyncio.Event()
+
         # Wait for first page if not ready yet
         if not self._first_page_ready:
             await self._page_ready.wait()
@@ -185,10 +223,21 @@ class AsyncStreamingResultSet:
         return self._total_rows
 
     async def cancel(self) -> None:
-        """Cancel the streaming operation."""
+        """Cancel the streaming operation.
+
+        This prevents fetching new pages but allows consuming already fetched data.
+        """
         self._exhausted = True
         # Note: ResponseFuture doesn't provide a direct cancel method,
-        # but setting exhausted will stop iteration
+        # but setting exhausted will stop fetching new pages
+
+    def __del__(self):
+        """Cleanup when object is garbage collected."""
+        # Clear any remaining references
+        if hasattr(self, '_current_page'):
+            self._current_page = []
+        if hasattr(self, '_active_callbacks'):
+            self._active_callbacks.clear()
 
 
 class StreamingResultHandler:

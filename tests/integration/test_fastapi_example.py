@@ -129,7 +129,7 @@ class TestUserCRUD:
         response = await client.get("/users/invalid-uuid")
 
         assert response.status_code == 400
-        assert "Invalid user ID format" in response.json()["detail"]
+        assert "Invalid UUID" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_list_users(self, client: AsyncClient, cassandra_service):

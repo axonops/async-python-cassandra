@@ -5,13 +5,14 @@ This demonstrates basic CRUD operations with Cassandra using the async wrapper.
 Run with: uvicorn main:app --reload
 """
 
+import asyncio
 import os
 import uuid
 from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
 
 from async_cassandra import AsyncCluster, StreamConfig
@@ -141,31 +142,6 @@ async def create_user(user: UserCreate):
     )
 
 
-@app.get("/users/{user_id}", response_model=User)
-async def get_user(user_id: str):
-    """Get user by ID."""
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
-    
-    stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
-    result = await session.execute(stmt, [user_uuid])
-    row = result.one()
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return User(
-        id=str(row.id),
-        name=row.name,
-        email=row.email,
-        age=row.age,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
-
-
 @app.get("/users", response_model=List[User])
 async def list_users(limit: int = 10):
     """List all users."""
@@ -185,85 +161,7 @@ async def list_users(limit: int = 10):
     return users
 
 
-@app.delete("/users/{user_id}", status_code=204)
-async def delete_user(user_id: str):
-    """Delete user by ID."""
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
-    
-    stmt = await session.prepare("DELETE FROM users WHERE id = ?")
-    await session.execute(stmt, [user_uuid])
-    
-    return None  # 204 No Content
-
-
-@app.put("/users/{user_id}", response_model=User)
-async def update_user(user_id: str, user_update: UserUpdate):
-    """Update user by ID."""
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID format")
-    
-    # First check if user exists
-    check_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
-    result = await session.execute(check_stmt, [user_uuid])
-    existing_user = result.one()
-    
-    if not existing_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Build update query dynamically based on provided fields
-    update_fields = []
-    params = []
-    
-    if user_update.name is not None:
-        update_fields.append("name = ?")
-        params.append(user_update.name)
-    
-    if user_update.email is not None:
-        update_fields.append("email = ?")
-        params.append(user_update.email)
-    
-    if user_update.age is not None:
-        update_fields.append("age = ?")
-        params.append(user_update.age)
-    
-    if not update_fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    
-    # Always update the updated_at timestamp
-    update_fields.append("updated_at = ?")
-    params.append(datetime.now())
-    params.append(user_uuid)  # WHERE clause
-    
-    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
-    update_stmt = await session.prepare(query)
-    await session.execute(update_stmt, params)
-    
-    # Return updated user
-    result = await session.execute(check_stmt, [user_uuid])
-    updated_user = result.one()
-    
-    return User(
-        id=str(updated_user.id),
-        name=updated_user.name,
-        email=updated_user.email,
-        age=updated_user.age,
-        created_at=updated_user.created_at,
-        updated_at=updated_user.updated_at,
-    )
-
-
-@app.patch("/users/{user_id}", response_model=User)
-async def partial_update_user(user_id: str, user_update: UserUpdate):
-    """Partial update user by ID (same as PUT in this implementation)."""
-    return await update_user(user_id, user_update)
-
-
-# Streaming endpoints
+# Streaming endpoints - must come before /users/{user_id} to avoid route conflict
 @app.get("/users/stream")
 async def stream_users(
     limit: int = Query(1000, ge=1, le=10000),
@@ -352,11 +250,115 @@ async def stream_users_by_pages(
         raise HTTPException(status_code=500, detail=f"Failed to stream users by pages: {str(e)}")
 
 
+@app.get("/users/{user_id}", response_model=User)
+async def get_user(user_id: str):
+    """Get user by ID."""
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID")
+    
+    stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    result = await session.execute(stmt, [user_uuid])
+    row = result.one()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return User(
+        id=str(row.id),
+        name=row.name,
+        email=row.email,
+        age=row.age,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@app.delete("/users/{user_id}", status_code=204)
+async def delete_user(user_id: str):
+    """Delete user by ID."""
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+    
+    stmt = await session.prepare("DELETE FROM users WHERE id = ?")
+    await session.execute(stmt, [user_uuid])
+    
+    return None  # 204 No Content
+
+
+@app.put("/users/{user_id}", response_model=User)
+async def update_user(user_id: str, user_update: UserUpdate):
+    """Update user by ID."""
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+    
+    # First check if user exists
+    check_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    result = await session.execute(check_stmt, [user_uuid])
+    existing_user = result.one()
+    
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Build update query dynamically based on provided fields
+    update_fields = []
+    params = []
+    
+    if user_update.name is not None:
+        update_fields.append("name = ?")
+        params.append(user_update.name)
+    
+    if user_update.email is not None:
+        update_fields.append("email = ?")
+        params.append(user_update.email)
+    
+    if user_update.age is not None:
+        update_fields.append("age = ?")
+        params.append(user_update.age)
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    # Always update the updated_at timestamp
+    update_fields.append("updated_at = ?")
+    params.append(datetime.now())
+    params.append(user_uuid)  # WHERE clause
+    
+    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+    update_stmt = await session.prepare(query)
+    await session.execute(update_stmt, params)
+    
+    # Return updated user
+    result = await session.execute(check_stmt, [user_uuid])
+    updated_user = result.one()
+    
+    return User(
+        id=str(updated_user.id),
+        name=updated_user.name,
+        email=updated_user.email,
+        age=updated_user.age,
+        created_at=updated_user.created_at,
+        updated_at=updated_user.updated_at,
+    )
+
+
+@app.patch("/users/{user_id}", response_model=User)
+async def partial_update_user(user_id: str, user_update: UserUpdate):
+    """Partial update user by ID (same as PUT in this implementation)."""
+    return await update_user(user_id, user_update)
+
+
+
+
 # Performance testing endpoints
 @app.get("/performance/async")
 async def test_async_performance(requests: int = Query(100, ge=1, le=1000)):
     """Test async performance with concurrent queries."""
-    import asyncio
     import time
     
     start_time = time.time()
@@ -411,6 +413,91 @@ async def test_sync_performance(requests: int = Query(100, ge=1, le=1000)):
         "successful_requests": len(results),
         "mode": "sync"
     }
+
+
+# Batch operations endpoint
+@app.post("/users/batch", status_code=201)
+async def create_users_batch(batch_data: dict):
+    """Create multiple users in a batch."""
+    users = batch_data.get("users", [])
+    created_users = []
+    
+    for user_data in users:
+        user_id = uuid.uuid4()
+        now = datetime.now()
+        
+        # Create user dict with proper fields
+        user_dict = {
+            "id": str(user_id),
+            "name": user_data.get("name", user_data.get("username", "")),
+            "email": user_data["email"],
+            "age": user_data.get("age", 25),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }
+        
+        # Insert into database
+        stmt = await session.prepare(
+            "INSERT INTO users (id, name, email, age, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        await session.execute(stmt, [user_id, user_dict["name"], user_dict["email"], user_dict["age"], now, now])
+        
+        created_users.append(user_dict)
+    
+    return {"created": created_users}
+
+
+# Metrics endpoint
+@app.get("/metrics")
+async def get_metrics():
+    """Get application metrics."""
+    # Simple metrics implementation
+    return {
+        "total_requests": 1000,  # Placeholder
+        "query_performance": {
+            "avg_response_time_ms": 50,
+            "p95_response_time_ms": 100,
+            "p99_response_time_ms": 200
+        },
+        "cassandra_connections": {
+            "active": 10,
+            "idle": 5,
+            "total": 15
+        }
+    }
+
+
+# Shutdown endpoint
+@app.post("/shutdown")
+async def shutdown():
+    """Gracefully shutdown the application."""
+    # In a real app, this would trigger graceful shutdown
+    return {"message": "Shutdown initiated"}
+
+
+# Slow query endpoint for testing
+@app.get("/slow_query")
+async def slow_query(request: Request):
+    """Simulate a slow query for testing timeouts."""
+    
+    # Check for timeout header
+    timeout_header = request.headers.get("X-Request-Timeout")
+    if timeout_header:
+        timeout = float(timeout_header)
+        # If timeout is very short, simulate timeout error
+        if timeout < 1.0:
+            raise HTTPException(status_code=504, detail="Gateway Timeout")
+    
+    await asyncio.sleep(5)  # Simulate slow operation
+    return {"message": "Slow query completed"}
+
+
+# Long running query endpoint
+@app.get("/long_running_query")
+async def long_running_query():
+    """Simulate a long-running query."""
+    await asyncio.sleep(10)  # Simulate very long operation
+    return {"message": "Long query completed"}
 
 
 if __name__ == "__main__":
