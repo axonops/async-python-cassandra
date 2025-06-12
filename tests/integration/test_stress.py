@@ -11,7 +11,7 @@ import statistics
 import time
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -32,7 +32,6 @@ class TestStressScenarios:
             contact_points=["localhost"],
             # Optimize for high concurrency
             executor_threads=8,
-            request_timeout=30.0,
         )
         session = await cluster.connect()
 
@@ -96,7 +95,7 @@ class TestStressScenarios:
                     insert_stmt,
                     [
                         uuid.uuid4(),
-                        datetime.utcnow(),
+                        datetime.now(timezone.utc),
                         f"stress_test_data_{i}_" + "x" * random.randint(100, 1000),
                         {
                             "latency": random.random() * 100,
@@ -186,7 +185,7 @@ class TestStressScenarios:
                         insert_stmt,
                         [
                             partition_key,
-                            datetime.utcnow(),
+                            datetime.now(timezone.utc),
                             "sustained_load_test_" + "x" * 500,
                             {"metric": random.random()},
                             {f"tag{i}" for i in range(5)},
@@ -346,7 +345,9 @@ class TestStressScenarios:
         for pk in partition_keys:
             start = time.perf_counter()
             result = await stress_session.execute(select_all_stmt, [pk])
-            rows = list(result)
+            rows = []
+            async for row in result:
+                rows.append(row)
             read_times.append(time.perf_counter() - start)
             assert len(rows) == columns_per_partition
 
@@ -365,7 +366,9 @@ class TestStressScenarios:
 
             start = time.perf_counter()
             result = await stress_session.execute(select_range_stmt, [pk, start_col, end_col])
-            rows = list(result)
+            rows = []
+            async for row in result:
+                rows.append(row)
             range_times.append(time.perf_counter() - start)
             assert 900 <= len(rows) <= 1000  # Approximately 1000 columns
 
@@ -380,7 +383,9 @@ class TestStressScenarios:
 
         for pk in partition_keys[:3]:  # Stream through 3 partitions
             result = await stress_session.execute_stream(
-                "SELECT * FROM wide_rows WHERE partition_key = ?", [pk], stream_config=stream_config
+                "SELECT * FROM wide_rows WHERE partition_key = %s",
+                [pk],
+                stream_config=stream_config,
             )
 
             async for row in result:
@@ -404,7 +409,7 @@ class TestStressScenarios:
         # Create a query that takes some time
         select_stmt = await stress_session.prepare(
             """
-            SELECT * FROM high_volume ALLOW FILTERING LIMIT 1000
+            SELECT * FROM high_volume LIMIT 1000
         """
         )
 
@@ -421,7 +426,7 @@ class TestStressScenarios:
                 insert_stmt,
                 [
                     uuid.uuid4(),
-                    datetime.utcnow(),
+                    datetime.now(timezone.utc),
                     f"test_data_{i}",
                     {"metric": float(i)},
                     {f"tag{i}"},

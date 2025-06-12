@@ -67,7 +67,7 @@ class TestStreamingIntegration:
         # Stream by pages
         stream_config = StreamConfig(fetch_size=10)
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users WHERE age = 25", stream_config=stream_config
+            "SELECT * FROM users WHERE age = 25 ALLOW FILTERING", stream_config=stream_config
         )
 
         page_count = 0
@@ -136,10 +136,11 @@ class TestStreamingIntegration:
             insert_stmt, [user_id, "StreamTest", "streamtest@test.com", 99]
         )
 
-        # Stream with parameters - prepare statement first
-        select_stmt = await cassandra_session.prepare("SELECT * FROM users WHERE age = ?")
+        # Stream with parameters - use non-prepared statement with ALLOW FILTERING
         result = await cassandra_session.execute_stream(
-            select_stmt, parameters=[99], stream_config=StreamConfig(fetch_size=5)
+            "SELECT * FROM users WHERE age = %s ALLOW FILTERING",
+            parameters=[99],
+            stream_config=StreamConfig(fetch_size=5),
         )
 
         found_user = False
@@ -155,7 +156,7 @@ class TestStreamingIntegration:
     async def test_streaming_empty_result(self, cassandra_session):
         """Test streaming with empty result set."""
         result = await cassandra_session.execute_stream(
-            "SELECT * FROM users WHERE age = 999"  # Should return no results
+            "SELECT * FROM users WHERE age = 999 ALLOW FILTERING"  # Should return no results
         )
 
         rows = []
@@ -172,7 +173,9 @@ class TestStreamingIntegration:
 
         # Get results with regular execute
         regular_result = await cassandra_session.execute(query)
-        regular_rows = [row for row in regular_result]
+        regular_rows = []
+        async for row in regular_result:
+            regular_rows.append(row)
 
         # Get results with streaming
         stream_result = await cassandra_session.execute_stream(query)

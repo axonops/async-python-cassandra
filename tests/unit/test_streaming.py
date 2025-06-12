@@ -189,37 +189,35 @@ class TestStreamingResultHandler:
         """Test getting streaming result from handler."""
         handler = StreamingResultHandler(mock_response_future)
 
-        # Get the callback function that was registered
-        call_args = mock_response_future.add_callbacks.call_args
-        callback = call_args[1]["callback"]
-
-        # Simulate initial response
-        test_rows = [{"id": 1}, {"id": 2}]
-        callback(test_rows)
-
         # Get streaming result
         result = await handler.get_streaming_result()
 
+        # Should return an AsyncStreamingResultSet
         assert isinstance(result, AsyncStreamingResultSet)
-        assert result._current_page == test_rows
-        assert result._page_number == 1
+        assert result.response_future == mock_response_future
+        assert result.config is not None
 
     @pytest.mark.asyncio
     async def test_initial_error_handling(self, mock_response_future):
         """Test error handling in initial response."""
         handler = StreamingResultHandler(mock_response_future)
 
-        # Get the errback function
-        call_args = mock_response_future.add_callbacks.call_args
-        errback = call_args[1]["errback"]
+        # The handler now just creates and returns an AsyncStreamingResultSet
+        # Error handling happens within the AsyncStreamingResultSet itself
+        result = await handler.get_streaming_result()
 
-        # Simulate error
+        # Verify the result is properly initialized
+        assert isinstance(result, AsyncStreamingResultSet)
+        assert result.response_future == mock_response_future
+
+        # Test error handling by simulating an error in the result set
         test_error = Exception("Connection failed")
-        errback(test_error)
+        result._handle_error(test_error)
 
-        # Should raise error when getting result
+        # Should raise error when iterating
         with pytest.raises(Exception) as exc_info:
-            await handler.get_streaming_result()
+            async for _ in result:
+                pass
 
         assert str(exc_info.value) == "Connection failed"
 

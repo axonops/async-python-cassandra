@@ -202,6 +202,17 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             raise ConnectionError("Session is closed")
 
         try:
+            # Apply fetch_size from stream_config if provided
+            if stream_config and hasattr(stream_config, "fetch_size"):
+                # If query is a string, create a SimpleStatement with fetch_size
+                if isinstance(query, str):
+                    from cassandra.query import SimpleStatement
+
+                    query = SimpleStatement(query, fetch_size=stream_config.fetch_size)
+                # If it's already a statement, try to set fetch_size
+                elif hasattr(query, "fetch_size"):
+                    query.fetch_size = stream_config.fetch_size
+
             response_future = self._session.execute_async(
                 query,
                 parameters,

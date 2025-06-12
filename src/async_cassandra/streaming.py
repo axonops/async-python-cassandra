@@ -51,6 +51,7 @@ class AsyncStreamingResultSet:
         self._total_rows = 0
         self._exhausted = False
         self._error: Optional[Exception] = None
+        self._first_page_ready = False
 
         # Event to signal when a page is ready
         self._page_ready = asyncio.Event()
@@ -83,6 +84,9 @@ class AsyncStreamingResultSet:
         else:
             self._current_page = []
             self._exhausted = True
+
+        # Mark first page as ready
+        self._first_page_ready = True
 
         # Signal that the page is ready
         self._loop.call_soon_threadsafe(self._page_ready.set)
@@ -128,6 +132,10 @@ class AsyncStreamingResultSet:
 
     async def __anext__(self) -> Any:
         """Get next row from the streaming result set."""
+        # Wait for first page if not ready yet
+        if not self._first_page_ready:
+            await self._page_ready.wait()
+
         # Check for errors first
         if self._error:
             raise self._error
@@ -153,6 +161,10 @@ class AsyncStreamingResultSet:
         Yields:
             Lists of row objects (pages).
         """
+        # Wait for first page if not ready yet
+        if not self._first_page_ready:
+            await self._page_ready.wait()
+
         # Yield the current page if it has data
         if self._current_page:
             yield self._current_page
@@ -197,39 +209,6 @@ class StreamingResultHandler:
         """
         self.response_future = response_future
         self.config = config or StreamConfig()
-        self._initial_future = asyncio.get_running_loop().create_future()
-        self._streaming_result: Optional[AsyncStreamingResultSet] = None
-
-        # Set up initial callback to create streaming result
-        self.response_future.add_callbacks(
-            callback=self._handle_initial_response, errback=self._handle_initial_error
-        )
-
-    def _handle_initial_response(self, rows: List[Any]) -> None:
-        """Handle the initial response to create streaming result."""
-        # Create the streaming result set with the initial rows
-        self._streaming_result = AsyncStreamingResultSet(self.response_future, self.config)
-
-        # Manually set the first page data
-        if rows is not None:
-            self._streaming_result._current_page = rows
-            self._streaming_result._page_number = 1
-            self._streaming_result._total_rows = len(rows)
-
-            if self.config.page_callback:
-                try:
-                    self.config.page_callback(1, len(rows))
-                except Exception as e:
-                    logger.warning(f"Page callback error: {e}")
-
-        # Resolve the future
-        loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(self._initial_future.set_result, self._streaming_result)
-
-    def _handle_initial_error(self, exc: Exception) -> None:
-        """Handle initial query error."""
-        loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(self._initial_future.set_exception, exc)
 
     async def get_streaming_result(self) -> AsyncStreamingResultSet:
         """
@@ -238,9 +217,9 @@ class StreamingResultHandler:
         Returns:
             AsyncStreamingResultSet for efficient iteration.
         """
-        result = await self._initial_future
-        assert isinstance(result, AsyncStreamingResultSet)
-        return result
+        # Simply create and return the streaming result set
+        # It will handle its own callbacks
+        return AsyncStreamingResultSet(self.response_future, self.config)
 
 
 def create_streaming_statement(
