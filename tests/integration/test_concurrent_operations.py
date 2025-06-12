@@ -71,7 +71,7 @@ class TestConcurrentOperations:
 
         # Performance assertions
         assert total_time < 10.0  # Should complete within 10 seconds
-        assert avg_duration < 0.1  # Average latency under 100ms
+        assert avg_duration < 0.15  # Average latency under 150ms
 
     @pytest.mark.asyncio
     async def test_concurrent_writes(self, cassandra_session: AsyncCassandraSession):

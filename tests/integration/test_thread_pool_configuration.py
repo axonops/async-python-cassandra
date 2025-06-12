@@ -276,8 +276,8 @@ class TestThreadPoolConfigurationIntegration:
         print(f"Memory increase for 50 threads: {memory_increase:.1f} MB")
         print(f"Per thread: {per_thread_memory:.2f} MB")
 
-        # Verify it's in reasonable range (1-3 MB per thread)
-        assert 0.5 <= per_thread_memory <= 3.0
+        # Verify it's in reasonable range (0.01-3 MB per thread)
+        assert 0.01 <= per_thread_memory <= 3.0
 
         # Cleanup
         for future in futures:

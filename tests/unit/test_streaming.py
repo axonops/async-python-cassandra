@@ -121,6 +121,8 @@ class TestAsyncStreamingResultSet:
 
         # Should raise error when iterating
         with pytest.raises(Exception) as exc_info:
+            # Set first_page_ready to avoid waiting
+            result_set._first_page_ready = True
             async for _ in result_set:
                 pass
 
@@ -216,6 +218,8 @@ class TestStreamingResultHandler:
 
         # Should raise error when iterating
         with pytest.raises(Exception) as exc_info:
+            # Set first_page_ready to avoid waiting
+            result._first_page_ready = True
             async for _ in result:
                 pass
 
