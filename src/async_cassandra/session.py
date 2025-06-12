@@ -122,10 +122,11 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             return result
 
         except (InvalidRequest, Unavailable, ReadTimeout, WriteTimeout, OperationTimedOut) as e:
-            # Re-raise Cassandra exceptions as QueryError
+            # Re-raise Cassandra exceptions without wrapping
             error_type = type(e).__name__
-            raise QueryError(f"Query execution failed: {str(e)}") from e
+            raise
         except Exception as e:
+            # Only wrap non-Cassandra exceptions
             error_type = type(e).__name__
             raise QueryError(f"Query execution failed: {str(e)}") from e
         finally:

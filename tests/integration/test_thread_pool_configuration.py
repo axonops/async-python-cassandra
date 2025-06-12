@@ -69,10 +69,7 @@ class TestThreadPoolConfigurationIntegration:
         tasks = []
         for i in range(10):
             # We need to run the tracking in the executor
-            future = cluster._cluster.executor.submit(track_thread)
-            task = asyncio.create_task(
-                asyncio.get_event_loop().run_in_executor(None, future.result)
-            )
+            task = asyncio.get_event_loop().run_in_executor(cluster._cluster.executor, track_thread)
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -248,7 +245,10 @@ class TestThreadPoolConfigurationIntegration:
         """Test memory overhead of different thread pool sizes."""
         import os
 
-        import psutil
+        try:
+            import psutil
+        except ImportError:
+            pytest.skip("psutil not installed")
 
         process = psutil.Process(os.getpid())
 
