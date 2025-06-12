@@ -133,33 +133,50 @@ class AsyncCluster(AsyncCloseable, AsyncContextManageable):
 
         return cls(contact_points=contact_points, auth_provider=auth_provider, **kwargs)  # type: ignore[arg-type]
 
-    async def connect(self, keyspace: Optional[str] = None) -> AsyncCassandraSession:
+    async def connect(
+        self, keyspace: Optional[str] = None, timeout: Optional[float] = None
+    ) -> AsyncCassandraSession:
         """
         Connect to the cluster and create a session.
 
         Args:
             keyspace: Optional keyspace to use.
+            timeout: Connection timeout in seconds. Defaults to DEFAULT_CONNECTION_TIMEOUT.
 
         Returns:
             New AsyncCassandraSession.
 
         Raises:
             ConnectionError: If connection fails.
+            asyncio.TimeoutError: If connection times out.
         """
         if self.is_closed:
             raise ConnectionError("Cluster is closed")
 
+        # Import here to avoid circular import
+        from .constants import DEFAULT_CONNECTION_TIMEOUT
+
+        if timeout is None:
+            timeout = DEFAULT_CONNECTION_TIMEOUT
+
         try:
-            session = await AsyncCassandraSession.create(self._cluster, keyspace)
+            session = await asyncio.wait_for(
+                AsyncCassandraSession.create(self._cluster, keyspace), timeout=timeout
+            )
             return session
 
+        except asyncio.TimeoutError:
+            raise
         except Exception as e:
             raise ConnectionError(f"Failed to connect to cluster: {str(e)}") from e
 
     async def _do_close(self) -> None:
         """Perform the actual cluster shutdown."""
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._cluster.shutdown)
+        # Use a reasonable timeout for shutdown operations
+        await asyncio.wait_for(
+            loop.run_in_executor(None, self._cluster.shutdown), timeout=30.0
+        )
 
     async def shutdown(self) -> None:
         """

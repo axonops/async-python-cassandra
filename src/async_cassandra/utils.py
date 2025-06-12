@@ -42,3 +42,6 @@ def safe_call_soon_threadsafe(
         except RuntimeError as e:
             # Event loop might be closed
             logger.warning(f"Failed to schedule callback: {e}")
+        except Exception:
+            # Ignore other exceptions - we don't want to crash the caller
+            pass

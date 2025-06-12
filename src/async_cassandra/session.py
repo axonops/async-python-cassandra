@@ -366,32 +366,46 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
             execution_profile=execution_profile,
         )
 
-    async def prepare(self, query: str, custom_payload: Any = None) -> PreparedStatement:
+    async def prepare(
+        self, query: str, custom_payload: Any = None, timeout: Optional[float] = None
+    ) -> PreparedStatement:
         """
         Prepare a CQL statement asynchronously.
 
         Args:
             query: The query to prepare.
             custom_payload: Custom payload to send with the request.
+            timeout: Timeout in seconds. Defaults to DEFAULT_REQUEST_TIMEOUT.
 
         Returns:
             PreparedStatement that can be executed multiple times.
 
         Raises:
             QueryError: If statement preparation fails.
+            asyncio.TimeoutError: If preparation times out.
         """
+        # Import here to avoid circular import
+        from .constants import DEFAULT_REQUEST_TIMEOUT
+
+        if timeout is None:
+            timeout = DEFAULT_REQUEST_TIMEOUT
 
         # Create the operation to execute atomically
         async def _prepare_operation() -> PreparedStatement:
             try:
                 loop = asyncio.get_event_loop()
 
-                # Prepare in executor to avoid blocking
-                prepared = await loop.run_in_executor(
-                    None, lambda: self._session.prepare(query, custom_payload)
+                # Prepare in executor to avoid blocking with timeout
+                prepared = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None, lambda: self._session.prepare(query, custom_payload)
+                    ),
+                    timeout=timeout,
                 )
 
                 return prepared
+            except asyncio.TimeoutError:
+                raise
             except (InvalidRequest, OperationTimedOut) as e:
                 raise QueryError(f"Statement preparation failed: {str(e)}") from e
             except Exception as e:
@@ -403,7 +417,10 @@ class AsyncCassandraSession(AsyncCloseable, AsyncContextManageable):
     async def _do_close(self) -> None:
         """Perform the actual session shutdown."""
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._session.shutdown)
+        # Use a reasonable timeout for shutdown operations
+        await asyncio.wait_for(
+            loop.run_in_executor(None, self._session.shutdown), timeout=30.0
+        )
 
     @property
     def keyspace(self) -> Optional[str]:

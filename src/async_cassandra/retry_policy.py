@@ -101,8 +101,8 @@ class AsyncRetryPolicy(RetryPolicy):
             # Query is not idempotent or not explicitly marked as True - do not retry
             return self.RETHROW, None
 
-        # Only retry simple and batch writes that are explicitly idempotent
-        if write_type in ("SIMPLE", "BATCH"):
+        # Only retry simple and batch writes (including UNLOGGED_BATCH) that are explicitly idempotent
+        if write_type in ("SIMPLE", "BATCH", "UNLOGGED_BATCH"):
             return self.RETRY, consistency
 
         return self.RETHROW, None

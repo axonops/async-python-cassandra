@@ -25,6 +25,8 @@ class StreamConfig:
     fetch_size: int = 1000  # Number of rows per page
     max_pages: Optional[int] = None  # Limit number of pages (None = no limit)
     page_callback: Optional[Callable[[int, int], None]] = None  # Progress callback
+    max_memory_mb: Optional[int] = None  # Max memory usage in MB (None = no limit)
+    timeout_seconds: Optional[float] = None  # Timeout for the entire streaming operation
 
 
 class AsyncStreamingResultSet:
@@ -33,6 +35,12 @@ class AsyncStreamingResultSet:
 
     This class provides memory-efficient iteration over large result sets
     by fetching pages as needed rather than loading all results at once.
+    
+    Can be used as an async context manager to ensure proper cleanup:
+    
+        async with streaming_result as stream:
+            async for row in stream:
+                process_row(row)
     """
 
     def __init__(self, response_future: ResponseFuture, config: Optional[StreamConfig] = None):
@@ -53,6 +61,7 @@ class AsyncStreamingResultSet:
         self._exhausted = False
         self._error: Optional[Exception] = None
         self._first_page_ready = False
+        self._closed = False
 
         # Thread lock for thread-safe operations
         self._lock = threading.Lock()
@@ -184,7 +193,12 @@ class AsyncStreamingResultSet:
 
         # Wait for the page to be ready
         assert self._page_ready is not None
-        await self._page_ready.wait()
+        
+        # Use timeout from config if available
+        if self.config.timeout_seconds:
+            await asyncio.wait_for(self._page_ready.wait(), timeout=self.config.timeout_seconds)
+        else:
+            await self._page_ready.wait()
 
         # Check for errors
         if self._error:
@@ -219,7 +233,11 @@ class AsyncStreamingResultSet:
             # Wait outside the lock
             if not self._first_page_ready:
                 assert self._page_ready is not None
-                await self._page_ready.wait()
+                # Use timeout from config if available
+                if self.config.timeout_seconds:
+                    await asyncio.wait_for(self._page_ready.wait(), timeout=self.config.timeout_seconds)
+                else:
+                    await self._page_ready.wait()
 
         # Check for errors first
         if self._error:
@@ -267,7 +285,11 @@ class AsyncStreamingResultSet:
             # Wait outside the lock
             if not self._first_page_ready:
                 assert self._page_ready is not None
-                await self._page_ready.wait()
+                # Use timeout from config if available
+                if self.config.timeout_seconds:
+                    await asyncio.wait_for(self._page_ready.wait(), timeout=self.config.timeout_seconds)
+                else:
+                    await self._page_ready.wait()
 
         # Yield the current page if it has data
         if self._current_page:
@@ -298,6 +320,34 @@ class AsyncStreamingResultSet:
         # but setting exhausted will stop fetching new pages
         # Clean up callbacks when cancelling
         self._cleanup_callbacks()
+
+    async def __aenter__(self) -> "AsyncStreamingResultSet":
+        """Enter async context manager."""
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit async context manager and clean up resources."""
+        await self.close()
+
+    async def close(self) -> None:
+        """Close the streaming result set and clean up resources."""
+        if self._closed:
+            return
+        
+        self._closed = True
+        self._exhausted = True
+        
+        # Clean up callbacks
+        self._cleanup_callbacks()
+        
+        # Clear current page to free memory
+        with self._lock:
+            self._current_page = []
+            self._current_index = 0
+        
+        # Clear any pending events
+        if self._page_ready is not None:
+            self._page_ready.set()  # Wake up any waiters
 
     def __del__(self) -> None:
         """Cleanup when object is garbage collected."""
