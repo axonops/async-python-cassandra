@@ -93,14 +93,14 @@ class TestStreamingMemoryManagement:
         stream._handle_page([1, 2, 3])
         stream._first_page_ready = True
 
-        class TestException(Exception):
+        class TestError(Exception):
             pass
 
-        with pytest.raises(TestException):
+        with pytest.raises(TestError):
             async with stream:
                 async for row in stream:
                     if row == 2:
-                        raise TestException("Test error")
+                        raise TestError("Test error")
 
         # Verify cleanup happened
         assert stream._closed

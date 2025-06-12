@@ -524,7 +524,7 @@ class TestCreateMonitoredSession:
     @pytest.mark.asyncio
     async def test_create_basic_session(self):
         """Test creating basic monitored session."""
-        with patch("async_cassandra.cluster.AsyncCluster") as MockCluster:
+        with patch("async_cassandra.cluster.AsyncCluster") as mock_cluster_class:
             mock_cluster = Mock()
             mock_session = Mock()
             mock_session._session = Mock()
@@ -534,7 +534,7 @@ class TestCreateMonitoredSession:
             mock_session._session.cluster.metadata.cluster_name = "Test"
             mock_session._session.cluster.protocol_version = 4
 
-            MockCluster.return_value = mock_cluster
+            mock_cluster_class.return_value = mock_cluster
             mock_cluster.connect = AsyncMock(return_value=mock_session)
 
             session, monitor = await create_monitored_session(
@@ -543,13 +543,13 @@ class TestCreateMonitoredSession:
 
             assert session == mock_session
             assert isinstance(monitor, ConnectionMonitor)
-            MockCluster.assert_called_once_with(contact_points=["127.0.0.1"])
+            mock_cluster_class.assert_called_once_with(contact_points=["127.0.0.1"])
             mock_cluster.connect.assert_called_once_with("test_ks")
 
     @pytest.mark.asyncio
     async def test_create_rate_limited_session(self):
         """Test creating rate limited session."""
-        with patch("async_cassandra.cluster.AsyncCluster") as MockCluster:
+        with patch("async_cassandra.cluster.AsyncCluster") as mock_cluster_class:
             mock_cluster = Mock()
             mock_session = Mock()
             mock_session._session = Mock()
@@ -559,7 +559,7 @@ class TestCreateMonitoredSession:
             mock_session._session.cluster.metadata.cluster_name = "Test"
             mock_session._session.cluster.protocol_version = 4
 
-            MockCluster.return_value = mock_cluster
+            mock_cluster_class.return_value = mock_cluster
             mock_cluster.connect = AsyncMock(return_value=mock_session)
 
             session, monitor = await create_monitored_session(
@@ -573,7 +573,7 @@ class TestCreateMonitoredSession:
     @pytest.mark.asyncio
     async def test_create_with_warmup(self):
         """Test creating session with connection warmup."""
-        with patch("async_cassandra.cluster.AsyncCluster") as MockCluster:
+        with patch("async_cassandra.cluster.AsyncCluster") as mock_cluster_class:
             mock_cluster = Mock()
             mock_session = Mock()
             mock_session._session = Mock()
@@ -584,7 +584,7 @@ class TestCreateMonitoredSession:
             mock_session._session.cluster.protocol_version = 4
             mock_session.execute = AsyncMock()
 
-            MockCluster.return_value = mock_cluster
+            mock_cluster_class.return_value = mock_cluster
             mock_cluster.connect = AsyncMock(return_value=mock_session)
 
             with patch.object(ConnectionMonitor, "warmup_connections") as mock_warmup:
