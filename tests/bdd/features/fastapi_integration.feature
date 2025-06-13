@@ -42,7 +42,7 @@ Feature: FastAPI Integration
     And all connections should be properly closed
     And no resource warnings should be logged
 
-  @fastapi @dependency-injection
+  @fastapi @dependency_injection
   Scenario: Use async-cassandra with FastAPI dependencies
     Given a FastAPI dependency that provides a Cassandra session
     When I use this dependency in multiple endpoints

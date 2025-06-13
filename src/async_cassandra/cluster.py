@@ -214,6 +214,9 @@ class AsyncCluster(AsyncContextManageable):
                 await asyncio.wait_for(
                     loop.run_in_executor(None, self._cluster.shutdown), timeout=30.0
                 )
+                # Give the driver's internal threads time to finish
+                # This helps prevent "cannot schedule new futures after shutdown" errors
+                await asyncio.sleep(5.0)
 
     async def shutdown(self) -> None:
         """

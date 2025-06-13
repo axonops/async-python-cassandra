@@ -69,6 +69,13 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "network: mark test as network test")
     config.addinivalue_line("markers", "data_integrity: mark test as data integrity test")
     config.addinivalue_line("markers", "startup_shutdown: mark test as startup/shutdown test")
+    config.addinivalue_line(
+        "markers", "dependency_injection: mark test as dependency injection test"
+    )
+    config.addinivalue_line("markers", "scale: mark test as scale test")
+    config.addinivalue_line("markers", "caching: mark test as caching test")
+    config.addinivalue_line("markers", "chaos: mark test as chaos test")
+    config.addinivalue_line("markers", "pagination: mark test as pagination test")
 
 
 # Automatically mark all BDD tests

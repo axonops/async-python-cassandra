@@ -420,6 +420,9 @@ class AsyncCassandraSession(AsyncContextManageable):
                 await asyncio.wait_for(
                     loop.run_in_executor(None, self._session.shutdown), timeout=30.0
                 )
+                # Give the driver's internal threads time to finish
+                # This helps prevent "cannot schedule new futures after shutdown" errors
+                await asyncio.sleep(5.0)
 
     @property
     def is_closed(self) -> bool:
