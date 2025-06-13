@@ -64,11 +64,28 @@ Benefits:
 
 ### Authentication
 
+If your Cassandra cluster requires authentication (most production clusters do), use the `create_with_auth` helper:
+
 ```python
 cluster = AsyncCluster.create_with_auth(
     contact_points=['localhost'],
     username='cassandra',
     password='cassandra'
+)
+
+# Then connect as usual
+session = await cluster.connect('my_keyspace')
+```
+
+**Note:** Never hardcode credentials in your code. Use environment variables or a secrets manager:
+
+```python
+import os
+
+cluster = AsyncCluster.create_with_auth(
+    contact_points=['localhost'],
+    username=os.environ['CASSANDRA_USER'],
+    password=os.environ['CASSANDRA_PASS']
 )
 ```
 
