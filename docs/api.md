@@ -24,6 +24,13 @@ AsyncCluster(
     retry_policy: Optional[RetryPolicy] = None,
     ssl_context: Optional[SSLContext] = None,
     protocol_version: Optional[int] = None,
+    executor_threads: int = 2,
+    max_schema_agreement_wait: int = 10,
+    control_connection_timeout: float = 2.0,
+    idle_heartbeat_interval: float = 30.0,
+    schema_event_refresh_window: float = 2.0,
+    topology_event_refresh_window: float = 10.0,
+    status_event_refresh_window: float = 2.0,
     **kwargs
 )
 ```
@@ -37,7 +44,14 @@ AsyncCluster(
 - `retry_policy`: Retry policy (default: AsyncRetryPolicy)
 - `ssl_context`: SSL context for secure connections
 - `protocol_version`: CQL protocol version
-- `**kwargs`: Additional cluster options
+- `executor_threads`: Number of threads for I/O operations (default: 2)
+- `max_schema_agreement_wait`: Max time to wait for schema agreement (default: 10)
+- `control_connection_timeout`: Timeout for control connection (default: 2.0)
+- `idle_heartbeat_interval`: Interval for connection heartbeat (default: 30.0)
+- `schema_event_refresh_window`: Window for schema event refresh (default: 2.0)
+- `topology_event_refresh_window`: Window for topology event refresh (default: 10.0)
+- `status_event_refresh_window`: Window for status event refresh (default: 2.0)
+- `**kwargs`: Additional cluster options passed to underlying driver
 
 ### Class Methods
 
@@ -61,10 +75,17 @@ Create cluster with username/password authentication.
 #### `connect`
 
 ```python
-async def connect(keyspace: Optional[str] = None) -> AsyncCassandraSession
+async def connect(
+    keyspace: Optional[str] = None,
+    timeout: Optional[float] = None
+) -> AsyncCassandraSession
 ```
 
 Connect to the cluster and create a session.
+
+**Parameters:**
+- `keyspace`: Optional keyspace to use
+- `timeout`: Connection timeout in seconds
 
 **Example:**
 ```python
@@ -79,6 +100,23 @@ async def shutdown() -> None
 ```
 
 Shutdown the cluster and release all resources.
+
+#### `register_user_type`
+
+```python
+def register_user_type(
+    keyspace: str,
+    user_type: str,
+    cls: Type
+) -> None
+```
+
+Register a user-defined type with the cluster.
+
+**Parameters:**
+- `keyspace`: Keyspace containing the user type
+- `user_type`: Name of the user type in Cassandra
+- `cls`: Python class to map the type to
 
 ### Properties
 
@@ -97,6 +135,18 @@ async with AsyncCluster(['localhost']) as cluster:
 
 Provides async interface for executing CQL queries.
 
+### Constructor
+
+The session is created by calling `cluster.connect()` and accepts an optional metrics middleware:
+
+```python
+# Created internally by cluster.connect()
+AsyncCassandraSession(
+    session: Session,
+    metrics: Optional[MetricsMiddleware] = None
+)
+```
+
 ### Methods
 
 #### `execute`
@@ -107,7 +157,7 @@ async def execute(
     parameters: Optional[Union[List, Dict]] = None,
     trace: bool = False,
     custom_payload: Optional[Dict[str, bytes]] = None,
-    timeout: Any = _NOT_SET,
+    timeout: Any = None,
     execution_profile: Any = EXEC_PROFILE_DEFAULT,
     paging_state: Optional[bytes] = None,
     host: Optional[Any] = None,
@@ -138,7 +188,7 @@ async def execute_batch(
     batch_statement: BatchStatement,
     trace: bool = False,
     custom_payload: Optional[Dict[str, bytes]] = None,
-    timeout: Any = _NOT_SET,
+    timeout: Any = None,
     execution_profile: Any = EXEC_PROFILE_DEFAULT
 ) -> AsyncResultSet
 ```
@@ -202,11 +252,17 @@ async for page in result.pages():
 ```python
 async def prepare(
     query: str,
-    custom_payload: Optional[Dict[str, bytes]] = None
+    custom_payload: Optional[Dict[str, bytes]] = None,
+    timeout: Optional[float] = None
 ) -> PreparedStatement
 ```
 
 Prepare a CQL statement asynchronously.
+
+**Parameters:**
+- `query`: The CQL query to prepare
+- `custom_payload`: Optional custom payload
+- `timeout`: Optional timeout in seconds
 
 **Example:**
 ```python
@@ -315,6 +371,47 @@ Retry policy for async operations with idempotency safety checks.
 ```python
 AsyncRetryPolicy(max_retries: int = 3)
 ```
+
+### Methods
+
+#### `on_read_timeout`
+```python
+def on_read_timeout(
+    query, consistency, required_responses, 
+    received_responses, data_retrieved, retry_num
+) -> Tuple[int, Optional[ConsistencyLevel]]
+```
+
+Handle read timeout with retry logic.
+
+#### `on_write_timeout`
+```python
+def on_write_timeout(
+    query, consistency, write_type,
+    required_responses, received_responses, retry_num
+) -> Tuple[int, Optional[ConsistencyLevel]]
+```
+
+Handle write timeout with idempotency checks.
+
+#### `on_unavailable`
+```python
+def on_unavailable(
+    query, consistency, required_replicas,
+    alive_replicas, retry_num
+) -> Tuple[int, Optional[ConsistencyLevel]]
+```
+
+Handle unavailable exception.
+
+#### `on_request_error`
+```python
+def on_request_error(
+    query, consistency, error, retry_num
+) -> Tuple[int, Optional[ConsistencyLevel]]
+```
+
+Handle request errors.
 
 ### Retry Behavior
 
@@ -475,3 +572,11 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+## Additional Components
+
+For documentation on monitoring, metrics, and streaming components, see:
+
+- [Monitoring and Metrics API Reference](api-monitoring.md) - ConnectionMonitor, MetricsMiddleware, streaming classes
+- [Streaming Guide](streaming.md) - Detailed streaming usage and examples
+- [Metrics and Monitoring Guide](metrics-monitoring.md) - Setting up monitoring
