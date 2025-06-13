@@ -6,6 +6,7 @@ avoiding complex state management.
 """
 
 import asyncio
+import logging
 from ssl import SSLContext
 from typing import Dict, List, Optional
 
@@ -162,21 +163,39 @@ class AsyncCluster(AsyncContextManageable):
             raise ConnectionError("Cluster is closed")
 
         # Import here to avoid circular import
-        from .constants import DEFAULT_CONNECTION_TIMEOUT
+        from .constants import DEFAULT_CONNECTION_TIMEOUT, MAX_RETRY_ATTEMPTS
 
         if timeout is None:
             timeout = DEFAULT_CONNECTION_TIMEOUT
 
-        try:
-            session = await asyncio.wait_for(
-                AsyncCassandraSession.create(self._cluster, keyspace), timeout=timeout
-            )
-            return session
+        last_error = None
+        for attempt in range(MAX_RETRY_ATTEMPTS):
+            try:
+                session = await asyncio.wait_for(
+                    AsyncCassandraSession.create(self._cluster, keyspace), timeout=timeout
+                )
+                return session
 
-        except asyncio.TimeoutError:
-            raise
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to cluster: {str(e)}") from e
+            except asyncio.TimeoutError:
+                raise
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_RETRY_ATTEMPTS - 1:
+                    # Log retry attempt
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Connection attempt {attempt + 1} failed: {str(e)}. "
+                        f"Retrying... ({attempt + 2}/{MAX_RETRY_ATTEMPTS})"
+                    )
+                    # Small delay before retry to allow service to recover
+                    # Use longer delay for NoHostAvailable errors
+                    if "NoHostAvailable" in str(type(e).__name__):
+                        await asyncio.sleep(2.0 * (attempt + 1))
+                    else:
+                        await asyncio.sleep(0.5 * (attempt + 1))
+
+        raise ConnectionError(f"Failed to connect to cluster after {MAX_RETRY_ATTEMPTS} attempts: {str(last_error)}") from last_error
 
     async def close(self) -> None:
         """
