@@ -10,6 +10,7 @@ import pytest
 from cassandra.query import BoundStatement, PreparedStatement
 
 from async_cassandra import AsyncCassandraSession as AsyncSession
+from tests._features.test_helpers import create_mock_response_future
 
 
 class TestPreparedStatements:
@@ -29,7 +30,7 @@ class TestPreparedStatements:
         prepared = await async_session.prepare("SELECT * FROM users WHERE id = ?")
 
         assert prepared == mock_prepared
-        mock_session.prepare.assert_called_once_with("SELECT * FROM users WHERE id = ?")
+        mock_session.prepare.assert_called_once_with("SELECT * FROM users WHERE id = ?", None)
 
     @pytest.mark.features
     async def test_execute_prepared_statement(self):
@@ -37,11 +38,12 @@ class TestPreparedStatements:
         mock_session = Mock()
         mock_prepared = Mock(spec=PreparedStatement)
         mock_bound = Mock(spec=BoundStatement)
-        mock_result = Mock(current_rows=[{"id": 1, "name": "test"}])
 
         mock_prepared.bind.return_value = mock_bound
         mock_session.prepare.return_value = mock_prepared
-        mock_session.execute.return_value = mock_result
+        mock_session.execute_async.return_value = create_mock_response_future(
+            [{"id": 1, "name": "test"}]
+        )
 
         async_session = AsyncSession(mock_session)
 
@@ -51,9 +53,14 @@ class TestPreparedStatements:
         # Execute with parameters
         result = await async_session.execute(prepared, [1])
 
-        assert result == mock_result
-        mock_prepared.bind.assert_called_once_with([1])
-        mock_session.execute.assert_called_once_with(mock_bound)
+        assert len(result._rows) == 1
+        assert result._rows[0] == {"id": 1, "name": "test"}
+        # The prepared statement and parameters are passed to execute_async
+        mock_session.execute_async.assert_called_once()
+        # Check that the prepared statement was passed
+        args = mock_session.execute_async.call_args[0]
+        assert args[0] == prepared
+        assert args[1] == [1]
 
     @pytest.mark.features
     @pytest.mark.critical
@@ -88,7 +95,7 @@ class TestPreparedStatements:
 
         mock_prepared.bind.return_value = mock_bound
         mock_session.prepare.return_value = mock_prepared
-        mock_session.execute.return_value = Mock(current_rows=[])
+        mock_session.execute_async.return_value = create_mock_response_future([])
 
         async_session = AsyncSession(mock_session)
 
@@ -99,10 +106,14 @@ class TestPreparedStatements:
             prepared, ["new name", 123], timeout=30.0, custom_payload={"trace": "true"}
         )
 
-        # Verify options were passed
-        _, kwargs = mock_session.execute.call_args
-        assert kwargs.get("timeout") == 30.0
-        assert kwargs.get("custom_payload") == {"trace": "true"}
+        # Verify execute_async was called with correct parameters
+        mock_session.execute_async.assert_called_once()
+        # Check the arguments passed to execute_async
+        args = mock_session.execute_async.call_args[0]
+        assert args[0] == prepared
+        assert args[1] == ["new name", 123]
+        # Check timeout was passed (position 4)
+        assert args[4] == 30.0
 
     @pytest.mark.features
     async def test_concurrent_prepare_statements(self):
@@ -117,7 +128,7 @@ class TestPreparedStatements:
             "DELETE": Mock(spec=PreparedStatement),
         }
 
-        def prepare_side_effect(query):
+        def prepare_side_effect(query, custom_payload=None):
             for key in prepared_stmts:
                 if key in query:
                     return prepared_stmts[key]
@@ -163,7 +174,7 @@ class TestPreparedStatements:
 
         mock_prepared.bind.return_value = mock_bound
         mock_session.prepare.return_value = mock_prepared
-        mock_session.execute.return_value = Mock(current_rows=[])
+        mock_session.execute_async.return_value = create_mock_response_future([])
 
         async_session = AsyncSession(mock_session)
 
@@ -174,9 +185,9 @@ class TestPreparedStatements:
         for user_id in [1, 2, 3, 4, 5]:
             await async_session.execute(prepared, [user_id])
 
-        # Prepare called once, bind called for each execution
+        # Prepare called once, execute_async called for each execution
         assert mock_session.prepare.call_count == 1
-        assert mock_prepared.bind.call_count == 5
+        assert mock_session.execute_async.call_count == 5
 
     @pytest.mark.features
     async def test_prepared_statement_metadata(self):

@@ -52,6 +52,20 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "performance: mark test as performance test")
     config.addinivalue_line("markers", "resilience: mark test as resilience test")
     config.addinivalue_line("markers", "fastapi: mark test as FastAPI integration test")
+    # Additional markers from feature files (with underscores instead of hyphens)
+    config.addinivalue_line("markers", "error_propagation: mark test as error propagation test")
+    config.addinivalue_line("markers", "prepared_statements: mark test as prepared statements test")
+    config.addinivalue_line("markers", "memory: mark test as memory test")
+    config.addinivalue_line("markers", "batch_operations: mark test as batch operations test")
+    config.addinivalue_line("markers", "circuit_breaker: mark test as circuit breaker test")
+    config.addinivalue_line("markers", "connection_pool: mark test as connection pool test")
+    config.addinivalue_line("markers", "deployment: mark test as deployment test")
+    config.addinivalue_line("markers", "zero_downtime: mark test as zero downtime test")
+    config.addinivalue_line("markers", "monitoring: mark test as monitoring test")
+    config.addinivalue_line("markers", "alerting: mark test as alerting test")
+    config.addinivalue_line("markers", "fire_and_forget: mark test as fire and forget test")
+    config.addinivalue_line("markers", "streaming: mark test as streaming test")
+    config.addinivalue_line("markers", "timeout: mark test as timeout test")
 
 
 # Automatically mark all BDD tests
@@ -65,6 +79,8 @@ def pytest_collection_modifyitems(items):
         # Add markers based on tags in feature files
         if hasattr(item, "scenario"):
             for tag in item.scenario.tags:
-                if hasattr(pytest.mark, tag.lstrip("@")):
-                    marker = getattr(pytest.mark, tag.lstrip("@"))
+                # Remove @ and convert hyphens to underscores
+                marker_name = tag.lstrip("@").replace("-", "_")
+                if hasattr(pytest.mark, marker_name):
+                    marker = getattr(pytest.mark, marker_name)
                     item.add_marker(marker)
