@@ -52,6 +52,7 @@ test = [
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
     "pytest-timeout>=2.2.0",
+    "pytest-bdd>=7.0.0",
     "fastapi>=0.100.0",
     "httpx>=0.24.0",
     "uvicorn>=0.23.0",
@@ -86,11 +87,33 @@ addopts = [
 ]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
 markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
-    "stress: marks tests as stress tests for high load scenarios (deselect with '-m \"not stress\"')",
-    "acceptance: marks tests as BDD acceptance tests for user workflows (deselect with '-m \"not acceptance\"')",
-    "benchmark: marks tests as performance benchmarks with thresholds (deselect with '-m \"not benchmark\"')",
+    # Test speed markers
+    "quick: Tests that run in <1 second (for smoke testing)",
+    "slow: Tests that take >10 seconds",
+    
+    # Test categories
+    "core: Core functionality - must pass for any commit",
+    "resilience: Error handling and recovery",
+    "features: Advanced feature tests",
+    "integration: Tests requiring real Cassandra",
+    "fastapi: FastAPI integration tests",
+    "bdd: Business-driven acceptance tests",
+    "performance: Performance and stress tests",
+    
+    # Priority markers
+    "critical: Business-critical functionality",
+    "smoke: Minimal tests for PR validation",
+    
+    # Special markers
+    "flaky: Known flaky tests (quarantined)",
+    "wip: Work in progress tests",
+    
+    # Legacy markers (kept for compatibility)
+    "stress: marks tests as stress tests for high load scenarios",
+    "acceptance: marks tests as BDD acceptance tests for user workflows",
+    "benchmark: marks tests as performance benchmarks with thresholds",
 ]
 
 [tool.coverage.run]

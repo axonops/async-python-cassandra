@@ -1,0 +1,326 @@
+"""Consolidated monitoring and metrics tests.
+
+This module combines all monitoring-related tests including basic monitoring,
+comprehensive monitoring scenarios, and fire-and-forget metrics.
+"""
+
+import time
+from datetime import datetime
+from unittest.mock import Mock
+
+import pytest
+
+from async_cassandra import AsyncCluster, AsyncCassandraSession as AsyncSession
+from async_cassandra.monitoring import (
+    ClusterMetrics,
+    ConnectionMetrics,
+    ErrorMetrics,
+    MetricsCollector,
+    MetricsExporter,
+    MetricsSnapshot,
+    PrometheusExporter,
+    QueryMetrics,
+    SessionMetrics,
+)
+
+
+class TestMetricsCollection:
+    """Test core metrics collection functionality."""
+
+    @pytest.mark.features
+    @pytest.mark.quick
+    @pytest.mark.critical
+    def test_query_metrics_collection(self):
+        """Test basic query metrics collection."""
+        metrics = QueryMetrics()
+
+        # Record successful query
+        metrics.record_query(query_type="SELECT", duration=0.025, success=True, rows_returned=5)
+
+        # Record failed query
+        metrics.record_query(
+            query_type="INSERT", duration=0.100, success=False, error_type="WriteTimeout"
+        )
+
+        assert metrics.total_queries == 2
+        assert metrics.successful_queries == 1
+        assert metrics.failed_queries == 1
+        assert metrics.total_duration == 0.125
+        assert metrics.average_duration == 0.0625
+
+    @pytest.mark.features
+    def test_session_metrics(self):
+        """Test session-level metrics."""
+        metrics = SessionMetrics()
+
+        # Record session events
+        metrics.session_created()
+        metrics.session_created()
+        metrics.session_closed()
+
+        assert metrics.total_sessions_created == 2
+        assert metrics.active_sessions == 1
+        assert metrics.total_sessions_closed == 1
+
+    @pytest.mark.features
+    def test_connection_metrics(self):
+        """Test connection pool metrics."""
+        metrics = ConnectionMetrics()
+
+        # Update connection pool state
+        metrics.update_pool_state(active_connections=5, idle_connections=3, pending_connections=2)
+
+        assert metrics.active_connections == 5
+        assert metrics.idle_connections == 3
+        assert metrics.pending_connections == 2
+        assert metrics.total_connections == 8
+
+    @pytest.mark.features
+    @pytest.mark.critical
+    def test_error_metrics_by_type(self):
+        """Test error tracking by type."""
+        metrics = ErrorMetrics()
+
+        # Record various errors
+        metrics.record_error("NoHostAvailable", "Connection refused")
+        metrics.record_error("NoHostAvailable", "Connection timeout")
+        metrics.record_error("WriteTimeout", "Coordinator timeout")
+        metrics.record_error("ReadTimeout", "Not enough replicas")
+
+        assert metrics.total_errors == 4
+        assert metrics.errors_by_type["NoHostAvailable"] == 2
+        assert metrics.errors_by_type["WriteTimeout"] == 1
+        assert metrics.errors_by_type["ReadTimeout"] == 1
+
+    @pytest.mark.features
+    def test_metrics_snapshot(self):
+        """Test creating metrics snapshots."""
+        collector = MetricsCollector()
+
+        # Record some metrics
+        collector.query_metrics.record_query("SELECT", 0.05, True, 10)
+        collector.session_metrics.session_created()
+        collector.error_metrics.record_error("InvalidRequest", "Bad query")
+
+        # Create snapshot
+        snapshot = collector.create_snapshot()
+
+        assert isinstance(snapshot, MetricsSnapshot)
+        assert snapshot.timestamp <= datetime.now()
+        assert snapshot.query_metrics.total_queries == 1
+        assert snapshot.session_metrics.active_sessions == 1
+        assert snapshot.error_metrics.total_errors == 1
+
+
+class TestAdvancedMonitoring:
+    """Test advanced monitoring features."""
+
+    @pytest.mark.features
+    async def test_query_tracing_integration(self):
+        """Test query tracing with metrics collection."""
+        mock_session = Mock()
+        mock_result = Mock()
+        mock_result.current_rows = [{"id": 1}]
+        mock_result.response_future = Mock()
+        mock_result.response_future.get_query_trace = Mock(return_value=None)
+
+        mock_session.execute.return_value = mock_result
+
+        # Create session with monitoring
+        async_session = AsyncSession(mock_session)
+        metrics_collector = MetricsCollector()
+        async_session._metrics_collector = metrics_collector
+
+        # Execute traced query
+        await async_session.execute("SELECT * FROM users WHERE id = 1", trace=True)
+
+        # Metrics should be recorded
+        assert metrics_collector.query_metrics.total_queries == 1
+
+    @pytest.mark.features
+    def test_cluster_metrics_aggregation(self):
+        """Test aggregating metrics across cluster."""
+        cluster_metrics = ClusterMetrics()
+
+        # Add node metrics
+        cluster_metrics.update_node_metrics(
+            "node1", {"status": "UP", "response_time": 0.010, "active_connections": 5}
+        )
+
+        cluster_metrics.update_node_metrics(
+            "node2", {"status": "UP", "response_time": 0.015, "active_connections": 3}
+        )
+
+        cluster_metrics.update_node_metrics(
+            "node3", {"status": "DOWN", "response_time": None, "active_connections": 0}
+        )
+
+        assert cluster_metrics.total_nodes == 3
+        assert cluster_metrics.healthy_nodes == 2
+        assert cluster_metrics.unhealthy_nodes == 1
+        assert cluster_metrics.average_response_time == 0.0125
+
+    @pytest.mark.features
+    @pytest.mark.critical
+    async def test_fire_and_forget_metrics(self):
+        """Test metrics for fire-and-forget queries."""
+        mock_session = Mock()
+        mock_future = Mock()
+        mock_session.execute_async.return_value = mock_future
+
+        async_session = AsyncSession(mock_session)
+        metrics_collector = MetricsCollector()
+        async_session._metrics_collector = metrics_collector
+
+        # Execute fire-and-forget query
+        async_session.execute_async(
+            "INSERT INTO events (id, data) VALUES (?, ?)", [1, "test"], fire_and_forget=True
+        )
+
+        # Should record as fire-and-forget
+        assert metrics_collector.query_metrics.fire_and_forget_queries == 1
+
+    @pytest.mark.features
+    async def test_metrics_export_formats(self):
+        """Test exporting metrics in different formats."""
+        collector = MetricsCollector()
+
+        # Record various metrics
+        collector.query_metrics.record_query("SELECT", 0.05, True, 10)
+        collector.query_metrics.record_query("INSERT", 0.02, True, 0)
+        collector.query_metrics.record_query("UPDATE", 0.10, False, 0)
+        collector.session_metrics.session_created()
+        collector.error_metrics.record_error("WriteTimeout", "Timeout")
+
+        # Export as JSON
+        json_exporter = MetricsExporter(format="json")
+        json_data = json_exporter.export(collector)
+        assert "query_metrics" in json_data
+        assert "session_metrics" in json_data
+
+        # Export as Prometheus format
+        prom_exporter = PrometheusExporter()
+        prom_data = prom_exporter.export(collector)
+        assert "cassandra_queries_total" in prom_data
+        assert "cassandra_query_duration_seconds" in prom_data
+        assert "cassandra_errors_total" in prom_data
+
+    @pytest.mark.features
+    def test_metrics_reset(self):
+        """Test resetting metrics."""
+        collector = MetricsCollector()
+
+        # Record metrics
+        collector.query_metrics.record_query("SELECT", 0.05, True, 5)
+        collector.session_metrics.session_created()
+        collector.error_metrics.record_error("NoHostAvailable", "Error")
+
+        # Verify metrics exist
+        assert collector.query_metrics.total_queries == 1
+        assert collector.session_metrics.total_sessions_created == 1
+        assert collector.error_metrics.total_errors == 1
+
+        # Reset
+        collector.reset()
+
+        # All should be zero
+        assert collector.query_metrics.total_queries == 0
+        assert collector.session_metrics.total_sessions_created == 0
+        assert collector.error_metrics.total_errors == 0
+
+
+class TestMonitoringIntegration:
+    """Test monitoring integration with async operations."""
+
+    @pytest.mark.features
+    @pytest.mark.critical
+    async def test_automatic_metrics_collection(self):
+        """Test automatic metrics collection during queries."""
+        mock_cluster = Mock()
+        mock_session = Mock()
+        mock_cluster.connect.return_value = mock_session
+
+        # Mock query execution
+        query_count = 0
+
+        def execute_side_effect(*args, **kwargs):
+            nonlocal query_count
+            query_count += 1
+            if query_count == 2:
+                raise Exception("Query failed")
+            return Mock(current_rows=[{"id": query_count}])
+
+        mock_session.execute.side_effect = execute_side_effect
+
+        # Create cluster with monitoring enabled
+        async_cluster = AsyncCluster(enable_monitoring=True)
+        async_cluster._cluster = mock_cluster
+
+        session = await async_cluster.connect()
+
+        # Execute queries
+        await session.execute("SELECT * FROM users")
+
+        with pytest.raises(Exception):
+            await session.execute("SELECT * FROM invalid")
+
+        await session.execute("SELECT * FROM products")
+
+        # Check metrics
+        metrics = async_cluster.get_metrics()
+        assert metrics.query_metrics.total_queries == 3
+        assert metrics.query_metrics.successful_queries == 2
+        assert metrics.query_metrics.failed_queries == 1
+
+    @pytest.mark.features
+    async def test_monitoring_performance_overhead(self):
+        """Test that monitoring doesn't significantly impact performance."""
+        mock_session = Mock()
+        mock_session.execute.return_value = Mock(current_rows=[])
+
+        # Time without monitoring
+        session_no_monitoring = AsyncSession(mock_session)
+
+        start = time.time()
+        for _ in range(1000):
+            await session_no_monitoring.execute("SELECT * FROM test")
+        time_no_monitoring = time.time() - start
+
+        # Time with monitoring
+        session_with_monitoring = AsyncSession(mock_session)
+        session_with_monitoring._metrics_collector = MetricsCollector()
+
+        start = time.time()
+        for _ in range(1000):
+            await session_with_monitoring.execute("SELECT * FROM test")
+        time_with_monitoring = time.time() - start
+
+        # Overhead should be minimal (less than 20%)
+        overhead_ratio = time_with_monitoring / time_no_monitoring
+        assert overhead_ratio < 1.2, f"Monitoring overhead too high: {overhead_ratio:.2f}x"
+
+    @pytest.mark.features
+    def test_monitoring_thread_safety(self):
+        """Test that metrics collection is thread-safe."""
+        import threading
+
+        collector = MetricsCollector()
+
+        def record_queries():
+            for i in range(100):
+                collector.query_metrics.record_query("SELECT", 0.01 * i, i % 2 == 0, i)
+
+        # Run from multiple threads
+        threads = []
+        for _ in range(10):
+            thread = threading.Thread(target=record_queries)
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        # Should have recorded all queries without corruption
+        assert collector.query_metrics.total_queries == 1000
+        assert collector.query_metrics.successful_queries == 500
+        assert collector.query_metrics.failed_queries == 500

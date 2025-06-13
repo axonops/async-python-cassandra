@@ -1,4 +1,4 @@
-name: CI
+name: CI Test Pipeline
 
 on:
   push:
@@ -12,8 +12,9 @@ permissions:
   pull-requests: read
 
 jobs:
-  lint:
-    name: Lint
+  # STAGE 1: Quick Validation (~30s total)
+  quick-checks:
+    name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -48,10 +49,11 @@ jobs:
     - name: Run type checking with mypy
       run: mypy src
 
-  test:
-    name: Test Python 3.12
+  # STAGE 2: Core Tests (~30s - FAIL FAST)
+  core-tests:
+    name: Core Functionality Tests
+    needs: quick-checks
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v4
     
@@ -64,38 +66,97 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-3.12-${{ hashFiles('pyproject.toml') }}
+        key: ${{ runner.os }}-pip-core-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
-          ${{ runner.os }}-pip-3.12-
+          ${{ runner.os }}-pip-core-
     
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[test]"
     
-    - name: Run unit tests
+    - name: Run Core Tests
       run: |
-        pytest tests/unit -v --cov=src/async_cassandra --cov-report=xml --cov-report=term-missing
+        pytest tests/_core -v --fail-fast --tb=short -m "not slow"
+        # Exit immediately if core tests fail
+    
+    - name: Upload core test results
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: core-test-results
+        path: pytest-results.xml
+
+  # STAGE 3: Resilience Tests (~45s)
+  resilience-tests:
+    name: Error Handling & Resilience Tests
+    needs: core-tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+    
+    - name: Run Resilience Tests
+      run: |
+        pytest tests/_resilience -v --fail-fast --cov=src/async_cassandra --cov-report=xml
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       if: github.event_name == 'push'
       with:
         file: ./coverage.xml
+        flags: resilience
         fail_ci_if_error: false
-        verbose: true
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  integration-test:
-    name: Integration Tests
+  # STAGE 4: Feature & Integration Tests (Parallel - ~2m)
+  feature-tests:
+    name: Advanced Features Tests
+    needs: resilience-tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        cassandra-version: ["5.0"]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+    
+    - name: Run Feature Tests
+      run: |
+        pytest tests/_features -v --cov=src/async_cassandra --cov-report=xml
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: features
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  integration-tests:
+    name: Cassandra Integration Tests
+    needs: resilience-tests
+    runs-on: ubuntu-latest
     services:
       cassandra:
-        image: cassandra:${{ matrix.cassandra-version }}
+        image: cassandra:5.0
         ports:
           - 9042:9042
         options: >-
@@ -112,19 +173,10 @@ jobs:
       with:
         python-version: '3.12'
     
-    - name: Cache pip packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-integration-${{ hashFiles('pyproject.toml', 'examples/fastapi_app/requirements-ci.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-integration-
-    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[test]"
-        pip install -r examples/fastapi_app/requirements-ci.txt
     
     - name: Wait for Cassandra
       run: |
@@ -137,18 +189,145 @@ jobs:
           sleep 10
         done
     
-    - name: Run all integration tests (including stress and FastAPI)
+    - name: Run Integration Tests
       run: |
-        pytest tests/integration -v -m integration --timeout=300
+        pytest tests/integration -v --timeout=300
       env:
         CASSANDRA_HOST: localhost
         CASSANDRA_PORT: 9042
 
+  # STAGE 5: Critical Path Tests (Parallel - ~2m)
+  fastapi-tests:
+    name: FastAPI Integration (CRITICAL)
+    needs: resilience-tests
+    runs-on: ubuntu-latest
+    services:
+      cassandra:
+        image: cassandra:5.0
+        ports:
+          - 9042:9042
+        options: >-
+          --health-cmd "cqlsh -e 'describe cluster'"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+        pip install -r examples/fastapi_app/requirements-ci.txt
+    
+    - name: Wait for Cassandra
+      run: |
+        timeout 300 bash -c 'until docker exec ${{ job.services.cassandra.id }} cqlsh -e "describe cluster" 2>/dev/null; do sleep 5; done'
+    
+    - name: Run FastAPI Tests
+      run: |
+        pytest tests/fastapi -v
+        cd examples/fastapi_app && pytest tests/ -v
 
+  bdd-tests:
+    name: BDD Acceptance Tests
+    needs: resilience-tests
+    runs-on: ubuntu-latest
+    services:
+      cassandra:
+        image: cassandra:5.0
+        ports:
+          - 9042:9042
+        options: >-
+          --health-cmd "cqlsh -e 'describe cluster'"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+    
+    - name: Wait for Cassandra
+      run: |
+        timeout 300 bash -c 'until docker exec ${{ job.services.cassandra.id }} cqlsh -e "describe cluster" 2>/dev/null; do sleep 5; done'
+    
+    - name: Run BDD Critical Scenarios
+      run: |
+        pytest tests/bdd -m "critical" -v --tb=short
+    
+    - name: Generate BDD Report
+      if: always()
+      run: |
+        pytest tests/bdd -m "critical" --cucumber-json=reports/bdd.json || true
+    
+    - name: Upload BDD Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bdd-reports
+        path: reports/
+
+  # STAGE 6: Extended Tests (On main branch only)
+  performance-tests:
+    name: Performance & Stress Tests
+    needs: [fastapi-tests, bdd-tests]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      cassandra:
+        image: cassandra:5.0
+        ports:
+          - 9042:9042
+        options: >-
+          --health-cmd "cqlsh -e 'describe cluster'"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[test]"
+    
+    - name: Wait for Cassandra
+      run: |
+        timeout 300 bash -c 'until docker exec ${{ job.services.cassandra.id }} cqlsh -e "describe cluster" 2>/dev/null; do sleep 5; done'
+    
+    - name: Run Performance Tests
+      run: |
+        pytest tests/performance -v --benchmark-only
+      env:
+        CASSANDRA_HOST: localhost
+
+  # Final build job
   build:
     name: Build Distribution
+    needs: [core-tests, resilience-tests, feature-tests, integration-tests, fastapi-tests, bdd-tests]
     runs-on: ubuntu-latest
-    needs: [lint, test, integration-test]
     steps:
     - uses: actions/checkout@v4
     
@@ -174,10 +353,11 @@ jobs:
         name: dist
         path: dist/
 
+  # Security scan (only on push)
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'  # Only run on push, not on every PR
+    if: github.event_name == 'push'
     steps:
     - uses: actions/checkout@v4
     
