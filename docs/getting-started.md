@@ -34,14 +34,33 @@ asyncio.run(main())
 
 ### Using Context Managers (Recommended)
 
-Context managers ensure proper cleanup:
+#### What are Context Managers?
 
+Context managers are Python's way of ensuring that resources are properly cleaned up after use. When you use `async with`, Python guarantees that cleanup code runs even if an error occurs. Think of it like a try/finally block but cleaner.
+
+**Without context manager (manual cleanup):**
+```python
+cluster = AsyncCluster(['localhost'])
+session = await cluster.connect('my_keyspace')
+try:
+    result = await session.execute("SELECT * FROM users")
+finally:
+    await session.close()      # You must remember this
+    await cluster.shutdown()   # And this!
+```
+
+**With context manager (automatic cleanup):**
 ```python
 async with AsyncCluster(['localhost']) as cluster:
     async with await cluster.connect('my_keyspace') as session:
         result = await session.execute("SELECT * FROM users")
-        # Automatically cleaned up
+        # Python automatically calls close() and shutdown() for you
 ```
+
+Benefits:
+- No forgotten cleanup (prevents connection leaks)
+- Cleaner code
+- Exception safe (cleanup happens even if query fails)
 
 ### Authentication
 
