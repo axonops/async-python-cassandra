@@ -1,0 +1,400 @@
+"""
+Extended unit tests for session module to improve coverage.
+"""
+
+import asyncio
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
+
+import pytest
+from cassandra import InvalidRequest, ReadTimeout
+from cassandra.cluster import _NOT_SET, EXEC_PROFILE_DEFAULT, ResultSet, Session
+from cassandra.query import BatchStatement, PreparedStatement, SimpleStatement
+
+from async_cassandra.exceptions import ConnectionError, QueryError
+from async_cassandra.session import AsyncCassandraSession
+from async_cassandra.streaming import AsyncStreamingResultSet, StreamConfig
+
+
+def create_mock_future(result=None, exception=None):
+    """Create a mock future that works with AsyncResultHandler."""
+    mock_future = Mock()
+    callbacks = []
+    
+    def add_done_callback(callback):
+        callbacks.append(callback)
+        # Simulate immediate callback execution
+        if exception:
+            callback(mock_future)
+        else:
+            callback(mock_future)
+    
+    mock_future.add_done_callback = add_done_callback
+    
+    if exception:
+        mock_future.result.side_effect = exception
+    else:
+        mock_future.result.return_value = result
+    
+    return mock_future
+
+
+class TestAsyncCassandraSessionExtended:
+    """Extended tests for AsyncCassandraSession."""
+
+    @pytest.mark.asyncio
+    async def test_execute_with_metrics(self):
+        """Test execute method with metrics recording."""
+        # Mock metrics
+        mock_metrics = AsyncMock()
+        mock_metrics.record_query_metrics = AsyncMock()
+
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.rows = [1, 2, 3]
+
+        # Mock session with proper future
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session, "test_keyspace")
+        async_session._metrics = mock_metrics
+
+        # Execute query
+        await async_session.execute("SELECT * FROM users", [123])
+
+        # Verify metrics were recorded
+        mock_metrics.record_query_metrics.assert_called_once()
+        call_args = mock_metrics.record_query_metrics.call_args[1]
+        assert call_args["query"] == "SELECT * FROM users"
+        assert call_args["success"] is True
+        assert call_args["result_size"] == 3
+
+    @pytest.mark.asyncio
+    async def test_execute_with_metrics_on_error(self):
+        """Test execute method records metrics on error."""
+        # Mock metrics
+        mock_metrics = AsyncMock()
+        mock_metrics.record_query_metrics = AsyncMock()
+
+        # Mock session that raises exception
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(exception=InvalidRequest("Bad query"))
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+        async_session._metrics = mock_metrics
+
+        # Execute query that fails
+        with pytest.raises(QueryError):
+            await async_session.execute("INVALID QUERY")
+
+        # Verify metrics were recorded for error
+        mock_metrics.record_query_metrics.assert_called_once()
+        call_args = mock_metrics.record_query_metrics.call_args[1]
+        assert call_args["query"] == "INVALID QUERY"
+        assert call_args["success"] is False
+        assert call_args["error_type"] == "InvalidRequest"
+
+    @pytest.mark.asyncio
+    async def test_execute_with_prepared_statement(self):
+        """Test execute with PreparedStatement."""
+        # Mock prepared statement
+        prepared = Mock(spec=PreparedStatement)
+        prepared.query_string = "SELECT * FROM users WHERE id = ?"
+
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.rows = []
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute prepared statement
+        await async_session.execute(prepared, [123])
+
+        # Verify statement was passed correctly
+        mock_session.execute_async.assert_called_once()
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[0] == prepared
+        assert call_args[1] == [123]
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_success(self):
+        """Test execute_stream with successful query."""
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.has_more_pages = False
+        mock_result.rows = [1, 2, 3]
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute streaming query
+        result = await async_session.execute_stream("SELECT * FROM large_table")
+
+        # Verify result is AsyncStreamingResultSet
+        assert isinstance(result, AsyncStreamingResultSet)
+
+        # Collect all rows
+        rows = []
+        async for row in result:
+            rows.append(row)
+
+        assert rows == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_with_parameters(self):
+        """Test execute_stream with all parameters."""
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.has_more_pages = False
+        mock_result.rows = []
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute with all parameters
+        await async_session.execute_stream(
+            "SELECT * FROM users WHERE id = ?",
+            parameters=[123],
+            stream_config=StreamConfig(fetch_size=500),
+            trace=True,
+            custom_payload={"key": b"value"},
+            timeout=30.0,
+            execution_profile="custom_profile",
+            paging_state=b"paging_state",
+            host=Mock(),
+            execute_as="other_user",
+        )
+
+        # Verify all parameters were passed
+        mock_session.execute_async.assert_called_once()
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[0] == "SELECT * FROM users WHERE id = ?"
+        assert call_args[1] == [123]
+        assert call_args[2] is True  # trace
+        assert call_args[3] == {"key": b"value"}  # custom_payload
+        assert call_args[4] == 30.0  # timeout
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_error_handling(self):
+        """Test execute_stream error handling."""
+        # Mock session that raises exception
+        mock_session = Mock(spec=Session)
+        mock_session.execute_async = Mock(side_effect=ReadTimeout("Read timeout"))
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Should wrap Cassandra exceptions in QueryError
+        with pytest.raises(QueryError, match="Streaming query execution failed"):
+            await async_session.execute_stream("SELECT * FROM large_table")
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_on_closed_session(self):
+        """Test execute_stream on closed session."""
+        mock_session = Mock(spec=Session)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+        await async_session.close()
+
+        # Should raise ConnectionError
+        with pytest.raises(ConnectionError, match="Session is closed"):
+            await async_session.execute_stream("SELECT * FROM users")
+
+    @pytest.mark.asyncio
+    async def test_execute_batch(self):
+        """Test execute_batch method."""
+        # Mock batch statement
+        batch = Mock(spec=BatchStatement)
+
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.rows = []
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute batch
+        await async_session.execute_batch(
+            batch,
+            trace=True,
+            custom_payload={"key": b"value"},
+            timeout=30.0,
+            execution_profile="custom_profile",
+        )
+
+        # Verify parameters were passed correctly
+        mock_session.execute_async.assert_called_once()
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[0] == batch
+        assert call_args[1] is True  # trace
+        assert call_args[2] == {"key": b"value"}  # custom_payload
+        assert call_args[3] == 30.0  # timeout
+        assert call_args[4] == "custom_profile"  # execution_profile
+
+    @pytest.mark.asyncio
+    async def test_execute_with_simple_statement(self):
+        """Test execute with SimpleStatement and all parameters."""
+        # Mock simple statement
+        stmt = Mock(spec=SimpleStatement)
+
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.rows = []
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute with all parameters
+        await async_session.execute(
+            stmt,
+            parameters=[123],
+            trace=True,
+            custom_payload={"key": b"value"},
+            timeout=30.0,
+            execution_profile="custom_profile",
+            paging_state=b"paging_state",
+            host=Mock(),
+            execute_as="other_user",
+        )
+
+        # Verify all parameters were passed
+        mock_session.execute_async.assert_called_once()
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[0] == stmt
+        assert call_args[1] == [123]
+        assert call_args[2] is True  # trace
+        assert call_args[3] == {"key": b"value"}  # custom_payload
+        assert call_args[4] == 30.0  # timeout
+
+    @pytest.mark.asyncio
+    async def test_execute_with_dict_parameters(self):
+        """Test execute with dictionary parameters."""
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.rows = []
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute with dict parameters
+        await async_session.execute(
+            "SELECT * FROM users WHERE id = :user_id AND name = :name",
+            {"user_id": 123, "name": "John"},
+        )
+
+        # Verify parameters were passed correctly
+        mock_session.execute_async.assert_called_once()
+        call_args = mock_session.execute_async.call_args[0]
+        assert call_args[1] == {"user_id": 123, "name": "John"}
+
+    @pytest.mark.asyncio
+    async def test_set_keyspace_error_handling(self):
+        """Test set_keyspace with various error conditions."""
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_session.is_shutdown = False
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Test with invalid keyspace name (should raise ValueError)
+        with pytest.raises(ValueError, match="Invalid keyspace name"):
+            await async_session.set_keyspace("bad-keyspace-name!")
+
+        # Test with InvalidRequest from Cassandra - now wrapped in QueryError
+        mock_future = create_mock_future(exception=InvalidRequest("Keyspace does not exist"))
+        mock_session.execute_async = Mock(return_value=mock_future)
+        
+        with pytest.raises(QueryError, match="Query execution failed"):
+            await async_session.set_keyspace("nonexistent_keyspace")
+
+    @pytest.mark.asyncio
+    async def test_concurrent_execute_calls(self):
+        """Test multiple concurrent execute calls."""
+        # Mock result
+        mock_result = Mock(spec=ResultSet)
+        mock_result.rows = [1]
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        
+        # Create multiple futures
+        mock_futures = [create_mock_future(result=mock_result) for _ in range(10)]
+        mock_session.execute_async = Mock(side_effect=mock_futures)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Execute multiple queries concurrently
+        queries = [
+            async_session.execute(f"SELECT * FROM users WHERE id = {i}")
+            for i in range(10)
+        ]
+
+        results = await asyncio.gather(*queries)
+
+        # Verify all queries completed
+        assert len(results) == 10
+        assert all(len(r.rows) == 1 for r in results)
+
+    @pytest.mark.asyncio
+    async def test_check_concurrent_streaming_limit(self):
+        """Test concurrent streaming limit check."""
+        # Mock result with pages
+        mock_result = Mock(spec=ResultSet)
+        mock_result.has_more_pages = True
+        mock_result.rows = [1, 2, 3]
+
+        # Mock session
+        mock_session = Mock(spec=Session)
+        mock_future = create_mock_future(result=mock_result)
+        mock_session.execute_async = Mock(return_value=mock_future)
+        mock_session.is_shutdown = False
+
+        async_session = AsyncCassandraSession(mock_session)
+
+        # Set max concurrent streams
+        async_session._max_concurrent_streams = 2
+
+        # Start multiple streaming queries
+        streams = []
+        for i in range(3):
+            stream = await async_session.execute_stream(f"SELECT * FROM table{i}")
+            streams.append(stream)
+
+        # Verify warning would be logged for exceeding limit
+        # (In actual implementation, this would log a warning)
