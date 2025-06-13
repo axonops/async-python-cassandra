@@ -4,7 +4,7 @@ Async-aware retry policies for Cassandra operations.
 
 from typing import Optional, Tuple, Union
 
-from cassandra.policies import RetryPolicy
+from cassandra.policies import RetryPolicy, WriteType
 from cassandra.query import BatchStatement, ConsistencyLevel, PreparedStatement, SimpleStatement
 
 
@@ -102,7 +102,7 @@ class AsyncRetryPolicy(RetryPolicy):
             return self.RETHROW, None
 
         # Only retry simple and batch writes (including UNLOGGED_BATCH) that are explicitly idempotent
-        if write_type in ("SIMPLE", "BATCH", "UNLOGGED_BATCH"):
+        if write_type in (WriteType.SIMPLE, WriteType.BATCH, WriteType.UNLOGGED_BATCH):
             return self.RETRY, consistency
 
         return self.RETHROW, None

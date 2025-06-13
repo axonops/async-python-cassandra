@@ -9,7 +9,7 @@ from unittest.mock import Mock
 import pytest
 from cassandra import ConsistencyLevel
 from cassandra.policies import RetryPolicy, WriteType
-from cassandra.query import BatchStatement, SimpleStatement
+from cassandra.query import BatchStatement, BatchType, SimpleStatement
 
 from async_cassandra.retry_policy import AsyncRetryPolicy
 
@@ -22,8 +22,8 @@ class TestRetryPolicyCore:
     @pytest.mark.critical
     def test_initialization(self):
         """Test retry policy initialization with custom values."""
-        policy = AsyncRetryPolicy(max_retry_count=5)
-        assert policy.max_retry_count == 5
+        policy = AsyncRetryPolicy(max_retries=5)
+        assert policy.max_retries == 5
 
     @pytest.mark.resilience
     @pytest.mark.core
@@ -36,9 +36,9 @@ class TestRetryPolicyCore:
         decision = policy.on_read_timeout(query, ConsistencyLevel.ONE, 1, 1, True, retry_num=0)
         assert decision == (RetryPolicy.RETRY, ConsistencyLevel.ONE)
 
-        # Second attempt - should rethrow
+        # Second attempt - should still retry (max_retries defaults to 3)
         decision = policy.on_read_timeout(query, ConsistencyLevel.ONE, 1, 1, True, retry_num=1)
-        assert decision == (RetryPolicy.RETHROW, None)
+        assert decision == (RetryPolicy.RETRY, ConsistencyLevel.ONE)
 
     @pytest.mark.resilience
     @pytest.mark.core
@@ -58,7 +58,8 @@ class TestRetryPolicyCore:
         policy = AsyncRetryPolicy()
 
         # Idempotent query should retry
-        query = Mock(is_idempotent=True)
+        query = SimpleStatement("SELECT * FROM test")
+        query.is_idempotent = True  # Must be exactly True, not just truthy
         decision = policy.on_write_timeout(
             query, ConsistencyLevel.ONE, WriteType.SIMPLE, 1, 1, retry_num=0
         )
@@ -75,7 +76,8 @@ class TestRetryPolicyCore:
     def test_write_timeout_batch_types(self):
         """Test write timeout for different batch types."""
         policy = AsyncRetryPolicy()
-        query = Mock(is_idempotent=True)
+        query = SimpleStatement("SELECT * FROM test")
+        query.is_idempotent = True
 
         # BATCH should retry if idempotent
         decision = policy.on_write_timeout(
@@ -125,7 +127,7 @@ class TestRetryPolicyCore:
     @pytest.mark.resilience
     def test_max_retry_count_enforcement(self):
         """Test that max retry count is enforced."""
-        policy = AsyncRetryPolicy(max_retry_count=2)
+        policy = AsyncRetryPolicy(max_retries=2)
         query = Mock(is_idempotent=True)
 
         # Should allow retries up to max
@@ -147,7 +149,8 @@ class TestRetryPolicyIdempotency:
         policy = AsyncRetryPolicy()
 
         # True should retry
-        query = Mock(is_idempotent=True)
+        query = SimpleStatement("SELECT * FROM test")
+        query.is_idempotent = True
         decision = policy.on_write_timeout(
             query, ConsistencyLevel.ONE, WriteType.SIMPLE, 1, 1, retry_num=0
         )
@@ -155,6 +158,7 @@ class TestRetryPolicyIdempotency:
 
         # Truthy values should NOT retry
         for truthy_value in [1, "yes", ["not empty"], {"key": "value"}]:
+            query = SimpleStatement("SELECT * FROM test")
             query.is_idempotent = truthy_value
             decision = policy.on_write_timeout(
                 query, ConsistencyLevel.ONE, WriteType.SIMPLE, 1, 1, retry_num=0
@@ -163,6 +167,7 @@ class TestRetryPolicyIdempotency:
 
         # False, None, and missing should not retry
         for falsy_value in [False, None, 0, "", [], {}]:
+            query = SimpleStatement("SELECT * FROM test")
             query.is_idempotent = falsy_value
             decision = policy.on_write_timeout(
                 query, ConsistencyLevel.ONE, WriteType.SIMPLE, 1, 1, retry_num=0
@@ -214,7 +219,7 @@ class TestRetryPolicyIdempotency:
         policy = AsyncRetryPolicy()
 
         # LOGGED batch (default)
-        batch = BatchStatement(batch_type=BatchStatement.Type.LOGGED)
+        batch = BatchStatement(batch_type=BatchType.LOGGED)
         batch.is_idempotent = True
         decision = policy.on_write_timeout(
             batch, ConsistencyLevel.ONE, WriteType.BATCH, 1, 1, retry_num=0
@@ -222,7 +227,7 @@ class TestRetryPolicyIdempotency:
         assert decision == (RetryPolicy.RETRY, ConsistencyLevel.ONE)
 
         # UNLOGGED batch
-        batch = BatchStatement(batch_type=BatchStatement.Type.UNLOGGED)
+        batch = BatchStatement(batch_type=BatchType.UNLOGGED)
         batch.is_idempotent = True
         decision = policy.on_write_timeout(
             batch, ConsistencyLevel.ONE, WriteType.UNLOGGED_BATCH, 1, 1, retry_num=0
@@ -230,7 +235,7 @@ class TestRetryPolicyIdempotency:
         assert decision == (RetryPolicy.RETRY, ConsistencyLevel.ONE)
 
         # COUNTER batch - should never retry
-        batch = BatchStatement(batch_type=BatchStatement.Type.COUNTER)
+        batch = BatchStatement(batch_type=BatchType.COUNTER)
         batch.is_idempotent = True  # Even if marked idempotent
         decision = policy.on_write_timeout(
             batch, ConsistencyLevel.ONE, WriteType.COUNTER, 1, 1, retry_num=0
@@ -252,7 +257,7 @@ class TestRetryPolicyComprehensive:
             (1, 1, True, True),  # Enough responses, data received
             (1, 1, False, True),  # Enough responses, no data
             (0, 1, False, False),  # Not enough responses
-            (2, 3, True, False),  # Not enough responses despite data
+            (2, 3, True, True),  # Some data received, should retry
             (3, 3, False, True),  # Enough responses, no data
         ]
 
@@ -269,8 +274,10 @@ class TestRetryPolicyComprehensive:
     def test_different_write_types(self):
         """Test all different write types."""
         policy = AsyncRetryPolicy()
-        query_idempotent = Mock(is_idempotent=True)
-        query_not_idempotent = Mock(is_idempotent=False)
+        query_idempotent = SimpleStatement("SELECT * FROM test")
+        query_idempotent.is_idempotent = True
+        query_not_idempotent = SimpleStatement("SELECT * FROM test")
+        query_not_idempotent.is_idempotent = False
 
         # Write types that respect idempotency
         idempotent_types = [WriteType.SIMPLE, WriteType.BATCH, WriteType.UNLOGGED_BATCH]
