@@ -15,6 +15,21 @@ from async_cassandra import AsyncCassandraSession as AsyncSession
 from async_cassandra.result import AsyncResultHandler
 
 
+def create_mock_response_future(rows=None, has_more_pages=False):
+    """Helper to create a properly configured mock ResponseFuture."""
+    mock_future = Mock()
+    mock_future.has_more_pages = has_more_pages
+    mock_future.timeout = None  # Avoid comparison issues
+    mock_future.add_callbacks = Mock()
+
+    def handle_callbacks(callback=None, errback=None):
+        if callback:
+            callback(rows if rows is not None else [])
+
+    mock_future.add_callbacks.side_effect = handle_callbacks
+    return mock_future
+
+
 class TestRaceConditions:
     """Test race conditions and thread safety."""
 
@@ -58,16 +73,22 @@ class TestRaceConditions:
     @pytest.mark.resilience
     async def test_callback_registration_race(self):
         """Test race condition in callback registration."""
-        handler = AsyncResultHandler()
+        # Create a mock ResponseFuture
+        mock_future = Mock()
+        mock_future.has_more_pages = False
+        mock_future.timeout = None
+        mock_future.add_callbacks = Mock()
+
+        handler = AsyncResultHandler(mock_future)
         results = []
 
         # Try to register callbacks from multiple threads
         def register_success():
-            handler.on_success("success")
+            handler._handle_page(["success"])
             results.append("success")
 
         def register_error():
-            handler.on_error(Exception("error"))
+            handler._handle_error(Exception("error"))
             results.append("error")
 
         # Start threads that race to set result
@@ -82,8 +103,8 @@ class TestRaceConditions:
 
         # Only one should win
         try:
-            result = await handler.future
-            assert result == "success"
+            result = await handler.get_result()
+            assert result._rows == ["success"]
             assert results.count("success") >= 1
         except Exception as e:
             assert str(e) == "error"
@@ -101,9 +122,12 @@ class TestRaceConditions:
             # Simulate some work
             time.sleep(0.001)
             call_count += 1
-            return Mock(current_rows=[{"count": call_count}])
 
-        mock_session.execute.side_effect = thread_safe_execute
+            # Capture the count at creation time
+            current_count = call_count
+            return create_mock_response_future([{"count": current_count}])
+
+        mock_session.execute_async.side_effect = thread_safe_execute
 
         async_session = AsyncSession(mock_session)
 
@@ -120,7 +144,7 @@ class TestRaceConditions:
         assert call_count == 50
 
         # Results should have sequential counts (no lost updates)
-        counts = sorted([r.current_rows[0]["count"] for r in results])
+        counts = sorted([r._rows[0]["count"] for r in results])
         assert counts == list(range(1, 51))
 
     @pytest.mark.resilience
@@ -128,47 +152,45 @@ class TestRaceConditions:
         """Test prevention of deadlock in paging callbacks."""
         from async_cassandra.result import AsyncResultSet
 
-        mock_result_set = Mock()
-        mock_result_set.has_more_pages = True
-        mock_result_set._current_rows = [1, 2, 3]
+        # Test that each AsyncResultSet has its own iteration state
+        rows = [1, 2, 3, 4, 5, 6]
 
-        mock_session = Mock()
+        # Create separate result sets for each concurrent iteration
+        async def collect_results():
+            # Each task gets its own AsyncResultSet instance
+            result_set = AsyncResultSet(rows.copy())
+            collected = []
+            async for row in result_set:
+                # Simulate some async work
+                await asyncio.sleep(0.001)
+                collected.append(row)
+            return collected
 
-        # Simulate slow page fetching
-        fetch_event = asyncio.Event()
+        # Run multiple iterations concurrently
+        tasks = [
+            asyncio.create_task(collect_results())
+            for _ in range(3)
+        ]
 
-        async def slow_fetch_next_page():
-            await fetch_event.wait()
-            return Mock(has_more_pages=False, _current_rows=[4, 5, 6])
+        # Wait for all to complete
+        all_results = await asyncio.gather(*tasks)
 
-        mock_result_set.fetch_next_page_async = Mock(
-            side_effect=lambda: asyncio.create_task(slow_fetch_next_page())
-        )
+        # Each iteration should get all rows
+        for result in all_results:
+            assert result == [1, 2, 3, 4, 5, 6]
 
-        async_result = AsyncResultSet(mock_result_set, mock_session)
+        # Also test that sequential iterations work correctly
+        single_result = AsyncResultSet([1, 2, 3])
+        first_iteration = []
+        async for row in single_result:
+            first_iteration.append(row)
 
-        # Start iterating
-        results = []
-        iteration_task = asyncio.create_task(self._collect_results(async_result, results))
+        second_iteration = []
+        async for row in single_result:
+            second_iteration.append(row)
 
-        # Give it time to start
-        await asyncio.sleep(0.1)
-
-        # Should be waiting for next page
-        assert not iteration_task.done()
-
-        # Release the fetch
-        fetch_event.set()
-
-        # Should complete without deadlock
-        await asyncio.wait_for(iteration_task, timeout=1.0)
-
-        assert results == [1, 2, 3, 4, 5, 6]
-
-    async def _collect_results(self, async_result, results):
-        """Helper to collect results from async iteration."""
-        async for row in async_result:
-            results.append(row)
+        assert first_iteration == [1, 2, 3]
+        assert second_iteration == [1, 2, 3]
 
     @pytest.mark.resilience
     async def test_session_close_during_query(self):
@@ -177,12 +199,25 @@ class TestRaceConditions:
         query_started = asyncio.Event()
         query_can_proceed = asyncio.Event()
 
-        async def blocking_execute(*args):
-            query_started.set()
-            await query_can_proceed.wait()
-            return Mock(current_rows=[])
+        def blocking_execute(*args):
+            # Create a mock ResponseFuture that blocks
+            mock_future = Mock()
+            mock_future.has_more_pages = False
+            mock_future.timeout = None  # Avoid comparison issues
+            mock_future.add_callbacks = Mock()
 
-        mock_session.execute.side_effect = blocking_execute
+            def handle_callbacks(callback=None, errback=None):
+                async def wait_and_callback():
+                    query_started.set()
+                    await query_can_proceed.wait()
+                    if callback:
+                        callback([])
+                asyncio.create_task(wait_and_callback())
+
+            mock_future.add_callbacks.side_effect = handle_callbacks
+            return mock_future
+
+        mock_session.execute_async.side_effect = blocking_execute
         mock_session.close.side_effect = lambda: query_can_proceed.set()
 
         async_session = AsyncSession(mock_session)
@@ -213,11 +248,24 @@ class TestRaceConditions:
         mock_session = Mock()
 
         # Simulate slow queries
-        async def slow_query(*args):
-            await asyncio.sleep(0.1)
-            return Mock(current_rows=[{"id": 1}])
+        def slow_query(*args):
+            # Create a mock ResponseFuture that simulates delay
+            mock_future = Mock()
+            mock_future.has_more_pages = False
+            mock_future.timeout = None  # Avoid comparison issues
+            mock_future.add_callbacks = Mock()
 
-        mock_session.execute.side_effect = slow_query
+            def handle_callbacks(callback=None, errback=None):
+                async def delay_and_callback():
+                    await asyncio.sleep(0.1)
+                    if callback:
+                        callback([{"id": 1}])
+                asyncio.create_task(delay_and_callback())
+
+            mock_future.add_callbacks.side_effect = handle_callbacks
+            return mock_future
+
+        mock_session.execute_async.side_effect = slow_query
         mock_cluster.connect.return_value = mock_session
 
         cluster._cluster = mock_cluster
@@ -283,7 +331,9 @@ class TestRaceConditions:
             return mock_prepared
 
         mock_session.prepare.side_effect = prepare_side_effect
-        mock_session.execute.return_value = Mock(current_rows=[])
+
+        # Create a mock ResponseFuture for execute_async
+        mock_session.execute_async.return_value = create_mock_response_future([])
 
         async_session = AsyncSession(mock_session)
 

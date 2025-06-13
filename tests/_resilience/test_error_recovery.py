@@ -5,7 +5,7 @@ connection errors, and proper error propagation through the async layer.
 """
 
 import asyncio
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from cassandra import ConsistencyLevel, InvalidRequest, Unavailable
@@ -13,6 +13,21 @@ from cassandra.cluster import NoHostAvailable
 
 from async_cassandra import AsyncCassandraSession as AsyncSession
 from async_cassandra import AsyncCluster
+
+
+def create_mock_response_future(rows=None, has_more_pages=False):
+    """Helper to create a properly configured mock ResponseFuture."""
+    mock_future = Mock()
+    mock_future.has_more_pages = has_more_pages
+    mock_future.timeout = None  # Avoid comparison issues
+    mock_future.add_callbacks = Mock()
+
+    def handle_callbacks(callback=None, errback=None):
+        if callback:
+            callback(rows if rows is not None else [])
+
+    mock_future.add_callbacks.side_effect = handle_callbacks
+    return mock_future
 
 
 class TestErrorRecovery:
@@ -27,13 +42,13 @@ class TestErrorRecovery:
             "127.0.0.1": ConnectionRefusedError("Connection refused"),
             "127.0.0.2": TimeoutError("Connection timeout"),
         }
-        
+
         # Create a real async session with mocked underlying session
         mock_session = Mock()
         mock_session.execute_async.side_effect = NoHostAvailable(
             "Unable to connect to any servers", errors
         )
-        
+
         async_session = AsyncSession(mock_session)
 
         with pytest.raises(NoHostAvailable) as exc_info:
@@ -47,7 +62,7 @@ class TestErrorRecovery:
     async def test_invalid_request_error(self):
         """Test handling of invalid request errors."""
         mock_session = Mock()
-        mock_session.execute.side_effect = InvalidRequest("Invalid CQL syntax")
+        mock_session.execute_async.side_effect = InvalidRequest("Invalid CQL syntax")
 
         async_session = AsyncSession(mock_session)
 
@@ -58,7 +73,7 @@ class TestErrorRecovery:
     async def test_unavailable_error(self):
         """Test handling of unavailable errors."""
         mock_session = Mock()
-        mock_session.execute.side_effect = Unavailable(
+        mock_session.execute_async.side_effect = Unavailable(
             "Cannot achieve consistency",
             consistency=ConsistencyLevel.QUORUM,
             required_replicas=2,
@@ -80,27 +95,36 @@ class TestErrorRecovery:
         """Test error handling in async callbacks."""
         from async_cassandra.result import AsyncResultHandler
 
-        handler = AsyncResultHandler()
+        # Create a mock ResponseFuture
+        mock_future = Mock()
+        mock_future.has_more_pages = False
+        mock_future.add_callbacks = Mock()
+        mock_future.timeout = None  # Set timeout to None to avoid comparison issues
+
+        handler = AsyncResultHandler(mock_future)
         test_error = RuntimeError("Callback error")
 
-        # Error should be propagated through future
-        handler.on_error(test_error)
+        # Manually call the error handler to simulate callback error
+        handler._handle_error(test_error)
 
         with pytest.raises(RuntimeError, match="Callback error"):
-            await handler.future
+            await handler.get_result()
 
     @pytest.mark.resilience
     async def test_connection_pool_exhaustion_recovery(self):
         """Test recovery from connection pool exhaustion."""
         mock_session = Mock()
 
+        # Create a mock ResponseFuture for successful response
+        mock_future = create_mock_response_future([{"id": 1}])
+
         # Simulate pool exhaustion then recovery
         responses = [
             NoHostAvailable("Pool exhausted", {}),
             NoHostAvailable("Pool exhausted", {}),
-            Mock(current_rows=[{"id": 1}]),  # Recovery
+            mock_future,  # Recovery returns ResponseFuture
         ]
-        mock_session.execute.side_effect = responses
+        mock_session.execute_async.side_effect = responses
 
         async_session = AsyncSession(mock_session)
 
@@ -111,7 +135,7 @@ class TestErrorRecovery:
 
         # Third attempt succeeds
         result = await async_session.execute("SELECT * FROM users")
-        assert result.current_rows == [{"id": 1}]
+        assert result._rows == [{"id": 1}]
 
     @pytest.mark.resilience
     async def test_partial_write_error_handling(self):
@@ -119,7 +143,7 @@ class TestErrorRecovery:
         mock_session = Mock()
 
         # Simulate partial write success
-        mock_session.execute.side_effect = Exception("Coordinator node timed out during write")
+        mock_session.execute_async.side_effect = Exception("Coordinator node timed out during write")
 
         async_session = AsyncSession(mock_session)
 
@@ -136,7 +160,7 @@ class TestErrorRecovery:
         mock_session.prepare.return_value = mock_prepared
 
         # But execution fails
-        mock_session.execute.side_effect = InvalidRequest("Invalid parameter")
+        mock_session.execute_async.side_effect = InvalidRequest("Invalid parameter")
 
         async_session = AsyncSession(mock_session)
 
@@ -158,11 +182,25 @@ class TestErrorRecovery:
         # Create queries that will hang
         hanging_event = asyncio.Event()
 
-        async def hanging_query(*args):
-            await hanging_event.wait()
-            return Mock(current_rows=[])
+        # Create mock ResponseFutures that will hang
+        def create_hanging_future(*args):
+            mock_future = Mock()
+            mock_future.has_more_pages = False
+            mock_future.timeout = None  # Avoid comparison issues
+            mock_future.add_callbacks = Mock()
 
-        mock_session.execute.side_effect = hanging_query
+            # Don't call callbacks until event is set
+            def handle_callbacks(callback=None, errback=None):
+                async def wait_and_callback():
+                    await hanging_event.wait()
+                    if callback:
+                        callback([])
+                asyncio.create_task(wait_and_callback())
+
+            mock_future.add_callbacks.side_effect = handle_callbacks
+            return mock_future
+
+        mock_session.execute_async.side_effect = create_hanging_future
 
         cluster = AsyncCluster()
         cluster._cluster = mock_cluster
@@ -202,7 +240,7 @@ class TestErrorRecovery:
         except InvalidRequest as e:
             original_error = e
 
-        mock_session.execute.side_effect = original_error
+        mock_session.execute_async.side_effect = original_error
 
         async_session = AsyncSession(mock_session)
 
@@ -223,13 +261,15 @@ class TestErrorRecovery:
             if "table1" in query:
                 raise InvalidRequest("Error in table1")
             elif "table2" in query:
-                return Mock(current_rows=[{"id": 2}])
+                # Create a mock ResponseFuture for success
+                return create_mock_response_future([{"id": 2}])
             elif "table3" in query:
                 raise NoHostAvailable("No hosts for table3", {})
             else:
-                return Mock(current_rows=[])
+                # Create a mock ResponseFuture for empty result
+                return create_mock_response_future([])
 
-        mock_session.execute.side_effect = execute_side_effect
+        mock_session.execute_async.side_effect = execute_side_effect
 
         async_session = AsyncSession(mock_session)
 
@@ -247,7 +287,7 @@ class TestErrorRecovery:
         assert "Error in table1" in str(results[0])
 
         assert not isinstance(results[1], Exception)
-        assert results[1].current_rows == [{"id": 2}]
+        assert results[1]._rows == [{"id": 2}]
 
         assert isinstance(results[2], NoHostAvailable)
         assert "No hosts for table3" in str(results[2])

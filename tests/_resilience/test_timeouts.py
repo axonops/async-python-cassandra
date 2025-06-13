@@ -16,6 +16,21 @@ from async_cassandra import AsyncCluster
 from async_cassandra.result import AsyncResultHandler
 
 
+def create_mock_response_future(rows=None, has_more_pages=False):
+    """Helper to create a properly configured mock ResponseFuture."""
+    mock_future = Mock()
+    mock_future.has_more_pages = has_more_pages
+    mock_future.timeout = None  # Avoid comparison issues
+    mock_future.add_callbacks = Mock()
+
+    def handle_callbacks(callback=None, errback=None):
+        if callback:
+            callback(rows if rows is not None else [])
+
+    mock_future.add_callbacks.side_effect = handle_callbacks
+    return mock_future
+
+
 class TestTimeoutHandling:
     """Test timeout handling in async operations."""
 
@@ -25,7 +40,7 @@ class TestTimeoutHandling:
     async def test_query_timeout_propagation(self):
         """Test that query timeouts are properly propagated."""
         mock_session = Mock()
-        mock_session.execute.side_effect = OperationTimedOut("Query timed out")
+        mock_session.execute_async.side_effect = OperationTimedOut("Query timed out")
 
         async_session = AsyncSession(mock_session)
 
@@ -36,9 +51,12 @@ class TestTimeoutHandling:
     async def test_read_timeout_exception(self):
         """Test handling of read timeout exceptions."""
         mock_session = Mock()
-        mock_session.execute.side_effect = ReadTimeout(
-            "Read timeout", consistency=1, received=0, required=1, data_retrieved=False
-        )
+        exception = ReadTimeout("Read timeout", data_retrieved=False)
+        # Set attributes manually since they're not in constructor
+        exception.consistency = 1
+        exception.received_responses = 0
+        exception.required_responses = 1
+        mock_session.execute_async.side_effect = exception
 
         async_session = AsyncSession(mock_session)
 
@@ -46,17 +64,22 @@ class TestTimeoutHandling:
             await async_session.execute("SELECT * FROM users")
 
         assert exc_info.value.consistency == 1
-        assert exc_info.value.received == 0
-        assert exc_info.value.required == 1
+        assert exc_info.value.received_responses == 0
+        assert exc_info.value.required_responses == 1
         assert exc_info.value.data_retrieved is False
 
     @pytest.mark.resilience
     async def test_write_timeout_exception(self):
         """Test handling of write timeout exceptions."""
+        from cassandra import WriteType
+
         mock_session = Mock()
-        mock_session.execute.side_effect = WriteTimeout(
-            "Write timeout", consistency=1, received=0, required=1, write_type="SIMPLE"
-        )
+        exception = WriteTimeout("Write timeout", write_type=WriteType.SIMPLE)
+        # Set attributes manually since they're not in constructor
+        exception.consistency = 1
+        exception.received_responses = 0
+        exception.required_responses = 1
+        mock_session.execute_async.side_effect = exception
 
         async_session = AsyncSession(mock_session)
 
@@ -64,9 +87,9 @@ class TestTimeoutHandling:
             await async_session.execute("INSERT INTO users VALUES (?)", [1])
 
         assert exc_info.value.consistency == 1
-        assert exc_info.value.received == 0
-        assert exc_info.value.required == 1
-        assert exc_info.value.write_type == "SIMPLE"
+        assert exc_info.value.received_responses == 0
+        assert exc_info.value.required_responses == 1
+        assert exc_info.value.write_type == WriteType.SIMPLE
 
     @pytest.mark.resilience
     @pytest.mark.critical
@@ -74,6 +97,7 @@ class TestTimeoutHandling:
         """Test that callbacks are cleaned up on timeout."""
         # Create a mock response future that simulates timeout
         mock_future = Mock(spec=ResponseFuture)
+        mock_future.timeout = None  # Avoid comparison issues
         callback_store = []
 
         def add_callback(callback, *args, **kwargs):
@@ -92,7 +116,7 @@ class TestTimeoutHandling:
         async_session = AsyncSession(mock_session)
 
         with pytest.raises(OperationTimedOut):
-            await async_session.execute_async("SELECT * FROM large_table")
+            await async_session.execute("SELECT * FROM large_table")
 
         # Verify callbacks were registered
         assert len(callback_store) > 0
@@ -104,13 +128,13 @@ class TestTimeoutHandling:
 
         # Mix of successful and timed-out queries
         results = [
-            Mock(current_rows=[{"id": 1}]),  # Success
+            create_mock_response_future([{"id": 1}]),  # Success
             OperationTimedOut("Query 2 timed out"),  # Timeout
-            Mock(current_rows=[{"id": 3}]),  # Success
+            create_mock_response_future([{"id": 3}]),  # Success
             OperationTimedOut("Query 4 timed out"),  # Timeout
         ]
 
-        mock_session.execute.side_effect = results
+        mock_session.execute_async.side_effect = results
 
         async_session = AsyncSession(mock_session)
 
@@ -136,17 +160,22 @@ class TestTimeoutHandling:
         mock_session = Mock()
 
         # First attempt times out, retry succeeds
-        mock_session.execute.side_effect = [
-            ReadTimeout("First attempt", 1, 0, 1, False),
-            Mock(current_rows=[{"id": 1, "name": "test"}]),
+        exception = ReadTimeout("First attempt", data_retrieved=False)
+        exception.consistency = 1
+        exception.received_responses = 0
+        exception.required_responses = 1
+
+        mock_session.execute_async.side_effect = [
+            exception,
+            create_mock_response_future([{"id": 1, "name": "test"}]),
         ]
 
         async_session = AsyncSession(mock_session)
 
         # This should succeed after retry
         result = await async_session.execute("SELECT * FROM users WHERE id = 1")
-        assert result.current_rows == [{"id": 1, "name": "test"}]
-        assert mock_session.execute.call_count == 2
+        assert result._rows == [{"id": 1, "name": "test"}]
+        assert mock_session.execute_async.call_count == 2
 
     @pytest.mark.resilience
     async def test_timeout_cleanup_on_session_close(self):
@@ -168,7 +197,7 @@ class TestTimeoutHandling:
         # Start queries that will hang
         tasks = []
         for i in range(3):
-            task = asyncio.create_task(async_session.execute_async(f"SELECT * FROM table{i}"))
+            task = asyncio.create_task(async_session.execute(f"SELECT * FROM table{i}"))
             tasks.append(task)
 
         # Close session should cancel pending operations
@@ -187,14 +216,20 @@ class TestTimeoutHandling:
 
         # Query-level timeout should override cluster default
         mock_session = Mock()
+
+        # Create a mock ResponseFuture for the response
+        mock_session.execute_async.return_value = create_mock_response_future([])
+
         async_session = AsyncSession(mock_session)
 
         # Execute with custom timeout
         asyncio.run(async_session.execute("SELECT * FROM users", timeout=5.0))
 
         # Verify timeout was passed to underlying session
-        _, kwargs = mock_session.execute.call_args
-        assert kwargs.get("timeout") == 5.0
+        mock_session.execute_async.assert_called_once()
+        args, kwargs = mock_session.execute_async.call_args
+        # The timeout parameter is at position 4 in the call
+        assert args[4] == 5.0
 
     @pytest.mark.resilience
     @pytest.mark.critical
@@ -204,7 +239,7 @@ class TestTimeoutHandling:
         import weakref
 
         mock_session = Mock()
-        mock_session.execute.side_effect = OperationTimedOut("Timed out")
+        mock_session.execute_async.side_effect = OperationTimedOut("Timed out")
 
         async_session = AsyncSession(mock_session)
 
@@ -213,8 +248,8 @@ class TestTimeoutHandling:
 
         original_handler_init = AsyncResultHandler.__init__
 
-        def tracked_init(self):
-            original_handler_init(self)
+        def tracked_init(self, response_future):
+            original_handler_init(self, response_future)
             handler_refs.append(weakref.ref(self))
 
         with patch.object(AsyncResultHandler, "__init__", tracked_init):
