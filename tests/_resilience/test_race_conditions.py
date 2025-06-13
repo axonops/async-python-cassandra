@@ -167,10 +167,7 @@ class TestRaceConditions:
             return collected
 
         # Run multiple iterations concurrently
-        tasks = [
-            asyncio.create_task(collect_results())
-            for _ in range(3)
-        ]
+        tasks = [asyncio.create_task(collect_results()) for _ in range(3)]
 
         # Wait for all to complete
         all_results = await asyncio.gather(*tasks)
@@ -212,6 +209,7 @@ class TestRaceConditions:
                     await query_can_proceed.wait()
                     if callback:
                         callback([])
+
                 asyncio.create_task(wait_and_callback())
 
             mock_future.add_callbacks.side_effect = handle_callbacks
@@ -260,6 +258,7 @@ class TestRaceConditions:
                     await asyncio.sleep(0.1)
                     if callback:
                         callback([{"id": 1}])
+
                 asyncio.create_task(delay_and_callback())
 
             mock_future.add_callbacks.side_effect = handle_callbacks

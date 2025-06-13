@@ -143,7 +143,9 @@ class TestErrorRecovery:
         mock_session = Mock()
 
         # Simulate partial write success
-        mock_session.execute_async.side_effect = Exception("Coordinator node timed out during write")
+        mock_session.execute_async.side_effect = Exception(
+            "Coordinator node timed out during write"
+        )
 
         async_session = AsyncSession(mock_session)
 
@@ -195,6 +197,7 @@ class TestErrorRecovery:
                     await hanging_event.wait()
                     if callback:
                         callback([])
+
                 asyncio.create_task(wait_and_callback())
 
             mock_future.add_callbacks.side_effect = handle_callbacks
