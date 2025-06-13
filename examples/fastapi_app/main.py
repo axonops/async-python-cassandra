@@ -13,15 +13,15 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
-from async_cassandra import AsyncCluster, StreamConfig
+from async_cassandra import AsyncCluster
 
 
 # Pydantic models
 class UserCreate(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     age: int
 
 
@@ -36,7 +36,7 @@ class User(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     age: Optional[int] = None
 
 

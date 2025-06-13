@@ -14,14 +14,9 @@ from async_cassandra import AsyncCassandraSession as AsyncSession
 from async_cassandra import AsyncCluster
 from async_cassandra.monitoring import (
     ClusterMetrics,
-    ConnectionMetrics,
-    ErrorMetrics,
-    MetricsCollector,
-    MetricsExporter,
-    MetricsSnapshot,
-    PrometheusExporter,
-    QueryMetrics,
-    SessionMetrics,
+    ConnectionMonitor,
+    HostMetrics,
+    create_monitored_session,
 )
 
 
