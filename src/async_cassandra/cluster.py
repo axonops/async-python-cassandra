@@ -6,7 +6,6 @@ avoiding complex state management.
 """
 
 import asyncio
-import logging
 from ssl import SSLContext
 from typing import Dict, List, Optional
 
