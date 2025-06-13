@@ -4,7 +4,6 @@ This module consolidates tests for the fundamental async wrapper components
 including AsyncCluster, AsyncSession, and base functionality.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -220,7 +219,7 @@ class TestAsyncSession:
         mock_session = Mock()
         mock_future = Mock(spec=ResponseFuture)
         mock_session.execute_async.return_value = mock_future
-        
+
         async_session = AsyncSession(mock_session)
 
         with patch("async_cassandra.session.AsyncResultHandler") as mock_handler_class:
@@ -230,7 +229,7 @@ class TestAsyncSession:
             mock_handler_class.return_value = mock_handler
 
             await async_session.set_keyspace("test_keyspace")
-        
+
         # Check that execute_async was called with the USE query
         call_args = mock_session.execute_async.call_args
         assert call_args[0][0] == "USE test_keyspace"

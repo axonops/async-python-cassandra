@@ -157,8 +157,9 @@ class TestThreadPoolConfiguration:
     @pytest.mark.critical
     async def test_concurrent_operations_within_limit(self):
         """Test handling concurrent operations within thread pool limit."""
-        from async_cassandra.session import AsyncCassandraSession as AsyncSession
         from cassandra.cluster import ResponseFuture
+
+        from async_cassandra.session import AsyncCassandraSession as AsyncSession
 
         mock_session = Mock()
         results = []
@@ -180,7 +181,7 @@ class TestThreadPoolConfiguration:
             mock_handler = Mock()
             mock_handler.get_result = AsyncMock(return_value=Mock(rows=[]))
             mock_handler_class.return_value = mock_handler
-            
+
             tasks = []
             for i in range(10):
                 task = asyncio.create_task(async_session.execute(f"SELECT * FROM table{i}"))
