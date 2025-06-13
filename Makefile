@@ -57,17 +57,17 @@ install-dev:
 # Quick validation (30s)
 test-quick:
 	@echo "Running quick validation tests..."
-	pytest tests/_core -v --fail-fast -m "quick"
+	pytest tests/_core -v -x -m "quick"
 
 # Core tests only (1m)
 test-core:
 	@echo "Running core functionality tests..."
-	pytest tests/_core tests/_resilience -v --fail-fast
+	pytest tests/_core tests/_resilience -v -x
 
 # Critical path (per CLAUDE.md)
 test-critical:
 	@echo "Running critical tests (including FastAPI)..."
-	pytest tests/_core -v --fail-fast -m "critical"
+	pytest tests/_core -v -x -m "critical"
 	pytest tests/fastapi -v
 	cd examples/fastapi_app && pytest tests/ -v
 	pytest tests/bdd -m "critical" -v
@@ -75,8 +75,8 @@ test-critical:
 # Progressive execution
 test-progressive:
 	@echo "Running tests in fail-fast order..."
-	@pytest tests/_core -v --fail-fast || exit 1
-	@pytest tests/_resilience -v --fail-fast || exit 1
+	@pytest tests/_core -v -x || exit 1
+	@pytest tests/_resilience -v -x || exit 1
 	@pytest tests/_features -v || exit 1
 	@pytest tests/integration -v || exit 1
 	@pytest tests/fastapi -v || exit 1
