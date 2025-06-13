@@ -198,8 +198,31 @@ async def stream_users(
 
         users = []
         async for row in result:
-            users.append(
-                {
+            # Handle both dict-like and object-like row access
+            if hasattr(row, '__getitem__'):
+                # Dictionary-like access
+                try:
+                    user_dict = {
+                        "id": str(row["id"]),
+                        "name": row["name"],
+                        "email": row["email"],
+                        "age": row["age"],
+                        "created_at": row["created_at"].isoformat(),
+                        "updated_at": row["updated_at"].isoformat(),
+                    }
+                except (KeyError, TypeError):
+                    # Fall back to attribute access
+                    user_dict = {
+                        "id": str(row.id),
+                        "name": row.name,
+                        "email": row.email,
+                        "age": row.age,
+                        "created_at": row.created_at.isoformat(),
+                        "updated_at": row.updated_at.isoformat(),
+                    }
+            else:
+                # Object-like access
+                user_dict = {
                     "id": str(row.id),
                     "name": row.name,
                     "email": row.email,
@@ -207,7 +230,7 @@ async def stream_users(
                     "created_at": row.created_at.isoformat(),
                     "updated_at": row.updated_at.isoformat(),
                 }
-            )
+            users.append(user_dict)
 
         return {
             "users": users,
@@ -256,15 +279,38 @@ async def stream_users_by_pages(
             page_size = len(page)
             total_processed += page_size
 
+            # Extract sample user data, handling both dict-like and object-like access
+            sample_user = None
+            if page:
+                first_row = page[0]
+                if hasattr(first_row, '__getitem__'):
+                    # Dictionary-like access
+                    try:
+                        sample_user = {
+                            "id": str(first_row["id"]),
+                            "name": first_row["name"],
+                            "email": first_row["email"]
+                        }
+                    except (KeyError, TypeError):
+                        # Fall back to attribute access
+                        sample_user = {
+                            "id": str(first_row.id),
+                            "name": first_row.name,
+                            "email": first_row.email
+                        }
+                else:
+                    # Object-like access
+                    sample_user = {
+                        "id": str(first_row.id),
+                        "name": first_row.name,
+                        "email": first_row.email
+                    }
+            
             pages_info.append(
                 {
                     "page_number": len(pages_info) + 1,
                     "rows_in_page": page_size,
-                    "sample_user": (
-                        {"id": str(page[0].id), "name": page[0].name, "email": page[0].email}
-                        if page
-                        else None
-                    ),
+                    "sample_user": sample_user,
                 }
             )
 
