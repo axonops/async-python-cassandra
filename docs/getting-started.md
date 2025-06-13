@@ -91,17 +91,42 @@ cluster = AsyncCluster.create_with_auth(
 
 ### Prepared Statements
 
-For queries with parameters, always use prepared statements:
+#### Why Use Prepared Statements?
+
+Prepared statements are **required** for parameterized queries in async-cassandra. They provide:
+
+1. **Security** - Prevents CQL injection attacks (like SQL injection)
+2. **Performance** - Query is parsed once, executed many times
+3. **Type Safety** - Cassandra validates parameter types
+
+#### How They Work
 
 ```python
-# Prepare once
-prepared = await session.prepare("SELECT * FROM users WHERE id = ?")
+# ❌ This will NOT work - direct parameters not supported
+await session.execute("SELECT * FROM users WHERE id = ?", [user_id])
 
-# Execute many times
+# ✅ This works - prepare first, then execute
+prepared = await session.prepare("SELECT * FROM users WHERE id = ?")
+result = await session.execute(prepared, [user_id])
+```
+
+#### Example Usage
+
+```python
+# Prepare once (usually at startup)
+user_query = await session.prepare("SELECT * FROM users WHERE id = ?")
+insert_stmt = await session.prepare(
+    "INSERT INTO users (id, name, email) VALUES (?, ?, ?)"
+)
+
+# Execute many times with different parameters
 for user_id in user_ids:
-    result = await session.execute(prepared, [user_id])
+    result = await session.execute(user_query, [user_id])
     user = result.one()
     print(user)
+
+# Insert new users
+await session.execute(insert_stmt, [uuid.uuid4(), "Alice", "alice@example.com"])
 ```
 
 ### Error Handling
