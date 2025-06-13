@@ -256,7 +256,8 @@ sequenceDiagram
 ### Simple Row-by-Row Processing
 
 ```python
-from async_cassandra import AsyncCluster, StreamConfig
+from async_cassandra import AsyncCluster
+from async_cassandra.streaming import StreamConfig
 
 async def process_large_table():
     cluster = AsyncCluster(['localhost'])

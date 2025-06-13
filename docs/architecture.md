@@ -309,34 +309,12 @@ sequenceDiagram
 
 ### Connection Pooling
 
-**Important Note**: When using protocol v3+ (Cassandra 2.1+), the Python driver maintains exactly **one TCP connection per host** due to Python's Global Interpreter Lock (GIL). This is different from drivers in other languages (Java, C++) that can maintain multiple connections per host.
+For detailed information about connection pooling behavior, limitations, and best practices, see our [Connection Pooling Documentation](connection-pooling.md).
 
-```mermaid
-graph TB
-    subgraph "AsyncCluster"
-        CP[Connection Manager]
-        LB[Load Balancer]
-        RP[Retry Policy]
-    end
-    
-    subgraph "Cassandra Nodes"
-        N1[Node 1<br/>1 connection]
-        N2[Node 2<br/>1 connection]
-        N3[Node 3<br/>1 connection]
-    end
-    
-    App[Application] --> CP
-    CP --> LB
-    LB -->|"1 TCP connection"| N1
-    LB -->|"1 TCP connection"| N2
-    LB -->|"1 TCP connection"| N3
-    
-    RP -.->|Retry Logic| LB
-    
-    Note[Each connection supports up to<br/>32,768 concurrent requests<br/>with protocol v3+]
-```
-
-For detailed information about connection pooling behavior and best practices, see our [Connection Pooling Documentation](connection-pooling.md).
+Key points:
+- Protocol v3+ uses one TCP connection per host
+- Each connection supports up to 32,768 concurrent requests
+- Python driver behavior differs from Java/C++ drivers due to GIL
 
 ## Performance Considerations
 

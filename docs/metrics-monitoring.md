@@ -47,7 +47,7 @@ from async_cassandra.metrics import QueryMetrics
 Connection health is monitored with:
 
 ```python
-from async_cassandra.metrics import ConnectionMetrics
+from async_cassandra import ConnectionMetrics
 
 # Metrics collected for connections:
 # - host: Cassandra node address
@@ -160,37 +160,32 @@ Monitor connection health with the ConnectionMonitor:
 from async_cassandra.monitoring import ConnectionMonitor
 
 async def monitor_connections():
-    monitor = ConnectionMonitor(session, collector)
+    monitor = ConnectionMonitor(session)
     
-    # Check all connections once
-    results = await monitor.check_all_connections()
-    for host, health in results.items():
-        print(f"{host}: {'UP' if health['is_up'] else 'DOWN'}")
+    # Get cluster metrics once
+    metrics = await monitor.get_cluster_metrics()
+    print(f"Healthy hosts: {metrics.healthy_hosts}")
+    print(f"Unhealthy hosts: {metrics.unhealthy_hosts}")
     
     # Start continuous monitoring
-    monitoring_task = asyncio.create_task(
-        monitor.start_monitoring(interval=30.0)  # Check every 30 seconds
-    )
+    await monitor.start_monitoring(interval=30)  # Check every 30 seconds
     
-    # Stop monitoring
-    monitor.stop_monitoring()
-    await monitoring_task
+    # Later, stop monitoring
+    await monitor.stop_monitoring()
 ```
 
 ### Connection Health Callbacks
 
 ```python
-# Get notified when connection status changes
-async def on_connection_change(host: str, is_up: bool, error: Optional[Exception]):
-    if not is_up:
-        print(f"ALERT: Connection to {host} is down: {error}")
-        # Send alert, page on-call, etc.
+# Get notified when metrics are collected
+async def on_metrics_collected(metrics: ClusterMetrics):
+    for host in metrics.hosts:
+        if host.status != "up":
+            print(f"ALERT: Host {host.address} is {host.status}")
+            # Send alert, page on-call, etc.
 
-monitor = ConnectionMonitor(
-    session, 
-    collector,
-    on_connection_change=on_connection_change
-)
+monitor = ConnectionMonitor(session)
+monitor.add_callback(on_metrics_collected)
 ```
 
 ## Custom Metrics Collectors

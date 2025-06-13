@@ -110,11 +110,10 @@ Configure appropriate connection pool settings:
 ```python
 cluster = AsyncCluster(
     contact_points=['localhost'],
-    # Connection pool settings
+    # Thread pool settings
     executor_threads=4,  # Number of reactor threads
-    # Per-host connection settings
+    # Protocol settings
     protocol_version=4,
-    connection_class=AsyncConnection,
     # Heartbeat to keep connections alive
     idle_heartbeat_interval=30.0
 )

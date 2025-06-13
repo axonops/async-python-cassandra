@@ -133,7 +133,9 @@ For more detailed examples, see our [Getting Started Guide](docs/getting-started
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please see:
+- [Contributing Guidelines](CONTRIBUTING.md) - How to contribute
+- [Developer Guide](docs/DEVELOPER_GUIDE.md) - Development setup, testing, and CI/CD
 
 **Important**: All contributors must sign our [Contributor License Agreement (CLA)](CLA.md) before their pull request can be merged.
 
@@ -151,15 +153,13 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - [Troubleshooting Guide](docs/troubleshooting.md) - Common issues and solutions
 
 ### Advanced Topics
+- [Architecture Overview](docs/architecture.md) - Technical deep dive
 - [Connection Pooling Guide](docs/connection-pooling.md) - Understanding Python driver limitations
 - [Thread Pool Configuration](docs/thread-pool-configuration.md) - Tuning the driver's executor
-- [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
 - [Streaming Large Result Sets](docs/streaming.md) - Efficiently handle large datasets
+- [Performance Guide](docs/performance.md) - Optimization tips and benchmarks
 - [Retry Policies](docs/retry-policies.md) - Why we have our own retry policy
 - [Metrics and Monitoring](docs/metrics-monitoring.md) - Track performance and health
-- [Architecture Overview](docs/architecture.md) - Technical deep dive
-- [Why Async Wrapper](docs/why-async-wrapper.md) - Technical justification for this library
-- [Alternatives Comparison](docs/alternatives-comparison.md) - Comparison with other async drivers
 
 ### Examples
 - [FastAPI Integration](examples/fastapi_app/README.md) - Complete REST API example

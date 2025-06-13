@@ -122,17 +122,13 @@ Execute a CQL query asynchronously.
 # Simple query
 result = await session.execute("SELECT * FROM users")
 
-# Query with parameters
-result = await session.execute(
-    "SELECT * FROM users WHERE id = ?",
-    [user_id]
-)
+# Query with parameters (must prepare first)
+prepared = await session.prepare("SELECT * FROM users WHERE id = ?")
+result = await session.execute(prepared, [user_id])
 
-# Query with named parameters
-result = await session.execute(
-    "SELECT * FROM users WHERE name = :name",
-    {"name": "John"}
-)
+# Query with named parameters (must prepare first)
+prepared = await session.prepare("SELECT * FROM users WHERE name = :name")
+result = await session.execute(prepared, {"name": "John"})
 ```
 
 #### `execute_batch`
@@ -158,6 +154,47 @@ batch.add("INSERT INTO users (id, name) VALUES (?, ?)", [id1, "Alice"])
 batch.add("INSERT INTO users (id, name) VALUES (?, ?)", [id2, "Bob"])
 
 await session.execute_batch(batch)
+```
+
+#### `execute_stream`
+
+```python
+async def execute_stream(
+    query: Union[str, SimpleStatement, PreparedStatement, BoundStatement],
+    parameters: Optional[Union[list, tuple, dict]] = None,
+    stream_config: Optional[StreamConfig] = None,
+    **kwargs
+) -> AsyncStreamingResultSet
+```
+
+Execute a query and return results as an async stream for memory-efficient processing of large result sets.
+
+**Parameters:**
+- `query`: The CQL query to execute
+- `parameters`: Query parameters (for prepared statements)
+- `stream_config`: Configuration for streaming (fetch size, max pages, etc.)
+- `**kwargs`: Additional keyword arguments passed to execute
+
+**Returns:** `AsyncStreamingResultSet` - An async iterator over the results
+
+**Example:**
+```python
+from async_cassandra.streaming import StreamConfig
+
+# Stream large result set with custom fetch size
+config = StreamConfig(fetch_size=1000)
+result = await session.execute_stream(
+    "SELECT * FROM large_table",
+    stream_config=config
+)
+
+# Process rows one at a time without loading all into memory
+async for row in result:
+    await process_row(row)
+    
+# Or process by pages
+async for page in result.pages():
+    await process_page(page)
 ```
 
 #### `prepare`
@@ -421,11 +458,9 @@ async def main():
             [user_id, "John Doe", "john@example.com"]
         )
         
-        # Query data
-        result = await session.execute(
-            "SELECT * FROM users WHERE id = ?",
-            [user_id]
-        )
+        # Query data (prepare the statement first)
+        select_stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+        result = await session.execute(select_stmt, [user_id])
         
         user = result.one()
         print(f"User: {user['name']} ({user['email']})")

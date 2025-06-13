@@ -66,6 +66,8 @@ Please follow these steps to have your contribution considered by the maintainer
 
 ## Development Setup
 
+For detailed development instructions, see our [Developer Guide](docs/DEVELOPER_GUIDE.md).
+
 Here's how to set up `async-python-cassandra` for local development:
 
 1. Fork the `async-python-cassandra` repo on GitHub.
