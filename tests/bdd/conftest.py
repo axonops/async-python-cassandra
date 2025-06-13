@@ -66,6 +66,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "fire_and_forget: mark test as fire and forget test")
     config.addinivalue_line("markers", "streaming: mark test as streaming test")
     config.addinivalue_line("markers", "timeout: mark test as timeout test")
+    config.addinivalue_line("markers", "network: mark test as network test")
+    config.addinivalue_line("markers", "data_integrity: mark test as data integrity test")
+    config.addinivalue_line("markers", "startup_shutdown: mark test as startup/shutdown test")
 
 
 # Automatically mark all BDD tests

@@ -24,7 +24,7 @@ Feature: FastAPI Integration
     And no request should take longer than 500ms
     And the Cassandra connection pool should not be exhausted
 
-  @fastapi @error-handling
+  @fastapi @error_handling
   Scenario: API error handling for database issues
     Given a Cassandra query that will fail
     When I send a request that triggers the failing query
@@ -32,7 +32,7 @@ Feature: FastAPI Integration
     And the error should not expose internal details
     And the connection should be returned to the pool
 
-  @fastapi @startup-shutdown
+  @fastapi @startup_shutdown
   Scenario: Application lifecycle management
     When the FastAPI application starts up
     Then the Cassandra cluster connection should be established
@@ -77,7 +77,7 @@ Feature: FastAPI Integration
     And cache should expire after the configured TTL
     And cache should be invalidated on data updates
 
-  @fastapi @prepared-statements
+  @fastapi @prepared_statements
   Scenario: Use prepared statements in API endpoints
     Given an endpoint that uses prepared statements
     When I make 1000 requests to this endpoint

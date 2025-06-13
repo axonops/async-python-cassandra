@@ -25,7 +25,7 @@ Feature: Query Execution
     Then the INSERT should succeed
     And the SELECT should return the inserted data
 
-  @prepared-statements
+  @prepared_statements
   Scenario: Use prepared statements for better performance
     Given a table "orders" exists
     When I prepare the statement "INSERT INTO orders (id, total) VALUES (?, ?)"
@@ -33,7 +33,7 @@ Feature: Query Execution
     Then all executions should succeed
     And the average execution time should be less than 5ms
 
-  @batch-operations
+  @batch_operations
   Scenario: Execute batch operations
     Given a table "events" exists
     When I create a batch with 100 INSERT statements
@@ -41,7 +41,7 @@ Feature: Query Execution
     Then all inserts should be applied atomically
     And I should be able to query all 100 events
 
-  @error-handling
+  @error_handling
   Scenario: Handle query syntax errors
     When I execute an invalid query "SELCT * FORM users"
     Then I should receive an InvalidRequest error
@@ -72,7 +72,7 @@ Feature: Query Execution
     And no query should block another
     And the total time should be less than executing them sequentially
 
-  @fire-and-forget
+  @fire_and_forget
   Scenario: Execute fire-and-forget queries
     Given a table "audit_log" exists
     When I execute 1000 INSERT queries in fire-and-forget mode

@@ -24,7 +24,7 @@ Feature: Cassandra Connection Management
     And no resources should be leaked
     And the event loop should not be blocked
 
-  @error-handling
+  @error_handling
   Scenario: Gracefully handle connection failures
     Given the Cassandra cluster is unavailable
     When I attempt to create a connection

@@ -15,7 +15,7 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from async_cassandra import AsyncCluster
+from async_cassandra import AsyncCluster, StreamConfig
 
 
 # Pydantic models

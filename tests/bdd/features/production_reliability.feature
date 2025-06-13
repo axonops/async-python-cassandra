@@ -54,7 +54,7 @@ Feature: Production Reliability Requirements
     When the partition heals
     Then the isolated node should rejoin automatically
 
-  @critical @data-integrity
+  @critical @data_integrity
   Scenario: Ensure consistency during failures
     Given concurrent write operations
     When various failures occur:
@@ -103,7 +103,7 @@ Feature: Production Reliability Requirements
     And no data corruption should occur
     And system should self-heal without intervention
 
-  @deployment @zero-downtime
+  @deployment @zero_downtime
   Scenario: Zero-downtime deployment
     Given a running application under load
     When I deploy a new version of the application

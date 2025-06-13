@@ -42,7 +42,7 @@ Feature: Error Handling and Recovery
     And the query should be retried on another node
     And the failure should be transparent to the application
 
-  @error-propagation
+  @error_propagation
   Scenario: Preserve error context through async layers
     Given a complex query that will fail
     When the query fails deep in the driver
@@ -50,7 +50,7 @@ Feature: Error Handling and Recovery
     And the stack trace should show the original error location
     And the error message should not be altered or wrapped
 
-  @connection-pool
+  @connection_pool
   Scenario: Handle connection pool exhaustion
     Given a connection pool with maximum 10 connections
     When I execute 50 concurrent long-running queries
@@ -79,7 +79,7 @@ Feature: Error Handling and Recovery
     And errors should be categorized by type
     And error details should be available for debugging
 
-  @circuit-breaker
+  @circuit_breaker
   Scenario: Circuit breaker for consistently failing nodes
     Given a 3-node cluster where one node is consistently failing
     When I execute 100 queries
