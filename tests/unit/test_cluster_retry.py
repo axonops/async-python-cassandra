@@ -22,6 +22,7 @@ class TestClusterConnectionRetry:
 
         # Create a mock that fails twice then succeeds
         connect_attempts = 0
+
         def connect_side_effect(keyspace=None):
             nonlocal connect_attempts
             connect_attempts += 1
@@ -44,7 +45,9 @@ class TestClusterConnectionRetry:
         mock_cluster = Mock()
 
         # Always fail
-        mock_cluster.connect = Mock(side_effect=NoHostAvailable("Unable to connect to any servers", {}))
+        mock_cluster.connect = Mock(
+            side_effect=NoHostAvailable("Unable to connect to any servers", {})
+        )
 
         with patch("async_cassandra.cluster.Cluster", return_value=mock_cluster):
             cluster = AsyncCluster(["localhost"])
@@ -61,9 +64,12 @@ class TestClusterConnectionRetry:
         mock_cluster = Mock()
 
         # Fail all attempts
-        mock_cluster.connect = Mock(side_effect=NoHostAvailable("Unable to connect to any servers", {}))
+        mock_cluster.connect = Mock(
+            side_effect=NoHostAvailable("Unable to connect to any servers", {})
+        )
 
         sleep_delays = []
+
         async def mock_sleep(delay):
             sleep_delays.append(delay)
 
@@ -93,7 +99,10 @@ class TestClusterConnectionRetry:
         mock_cluster.connect = Mock(side_effect=lambda k=None: Mock())
 
         with patch("async_cassandra.cluster.Cluster", return_value=mock_cluster):
-            with patch("async_cassandra.session.AsyncCassandraSession.create", side_effect=asyncio.TimeoutError()):
+            with patch(
+                "async_cassandra.session.AsyncCassandraSession.create",
+                side_effect=asyncio.TimeoutError(),
+            ):
                 cluster = AsyncCluster(["localhost"])
 
                 # Should raise TimeoutError without retrying
@@ -110,6 +119,7 @@ class TestClusterConnectionRetry:
         mock_cluster.connect = Mock(side_effect=Exception("Generic error"))
 
         sleep_delays = []
+
         async def mock_sleep(delay):
             sleep_delays.append(delay)
 

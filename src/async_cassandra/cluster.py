@@ -182,6 +182,7 @@ class AsyncCluster(AsyncContextManageable):
                 if attempt < MAX_RETRY_ATTEMPTS - 1:
                     # Log retry attempt
                     import logging
+
                     logger = logging.getLogger(__name__)
                     logger.warning(
                         f"Connection attempt {attempt + 1} failed: {str(e)}. "
@@ -194,7 +195,9 @@ class AsyncCluster(AsyncContextManageable):
                     else:
                         await asyncio.sleep(0.5 * (attempt + 1))
 
-        raise ConnectionError(f"Failed to connect to cluster after {MAX_RETRY_ATTEMPTS} attempts: {str(last_error)}") from last_error
+        raise ConnectionError(
+            f"Failed to connect to cluster after {MAX_RETRY_ATTEMPTS} attempts: {str(last_error)}"
+        ) from last_error
 
     async def close(self) -> None:
         """
