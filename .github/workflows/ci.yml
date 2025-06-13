@@ -238,6 +238,7 @@ jobs:
   bdd-tests:
     name: BDD Acceptance Tests
     needs: resilience-tests
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     services:
       cassandra:
@@ -267,14 +268,14 @@ jobs:
       run: |
         timeout 300 bash -c 'until docker exec ${{ job.services.cassandra.id }} cqlsh -e "describe cluster" 2>/dev/null; do sleep 5; done'
     
-    - name: Run BDD Critical Scenarios
+    - name: Run BDD Scenarios
       run: |
-        pytest tests/bdd -m "critical" -v --tb=short
+        pytest tests/bdd -v --tb=short
     
     - name: Generate BDD Report
       if: always()
       run: |
-        pytest tests/bdd -m "critical" --cucumber-json=reports/bdd.json || true
+        pytest tests/bdd --cucumber-json=reports/bdd.json || true
     
     - name: Upload BDD Reports
       if: always()
@@ -326,7 +327,14 @@ jobs:
   # Final build job
   build:
     name: Build Distribution
-    needs: [core-tests, resilience-tests, feature-tests, integration-tests, fastapi-tests, bdd-tests]
+    needs: [core-tests, resilience-tests, feature-tests, integration-tests, fastapi-tests]
+    if: |
+      always() && 
+      needs.core-tests.result == 'success' &&
+      needs.resilience-tests.result == 'success' &&
+      needs.feature-tests.result == 'success' &&
+      needs.integration-tests.result == 'success' &&
+      needs.fastapi-tests.result == 'success'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4

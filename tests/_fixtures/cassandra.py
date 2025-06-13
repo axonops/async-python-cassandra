@@ -33,7 +33,28 @@ class CassandraContainer:
 
     def start(self):
         """Start the Cassandra container."""
-        # Check if container already exists
+        # First check if port 9042 is already in use
+        port_check = subprocess.run(
+            [self.runtime, "ps", "--format", "{{.Names}} {{.Ports}}"],
+            capture_output=True,
+            text=True,
+        )
+
+        if port_check.stdout.strip():
+            # Check each running container for port 9042
+            for line in port_check.stdout.strip().split("\n"):
+                if "9042" in line:
+                    # Extract container name
+                    existing_container = line.split()[0]
+                    if existing_container != self.container_name:
+                        print(f"Using existing Cassandra container: {existing_container}")
+                        self.container_id = existing_container
+                        self.container_name = existing_container
+                        # Verify it's ready
+                        self._wait_for_cassandra()
+                        return
+
+        # Check if our container already exists
         result = subprocess.run(
             [
                 self.runtime,
@@ -94,11 +115,13 @@ class CassandraContainer:
         """Wait for Cassandra to be ready to accept connections."""
         start_time = time.time()
         while time.time() - start_time < timeout:
+            # Use container name instead of ID for exec
+            container_ref = self.container_name if self.container_name else self.container_id
             result = subprocess.run(
                 [
                     self.runtime,
                     "exec",
-                    self.container_id,
+                    container_ref,
                     "cqlsh",
                     "-e",
                     "SELECT release_version FROM system.local",
@@ -134,6 +157,39 @@ class CassandraContainer:
 @pytest.fixture(scope="session")
 def cassandra_container():
     """Provide a Cassandra container for the test session."""
+    # First check if there's already a running container we can use
+    runtime = get_container_runtime()
+    port_check = subprocess.run(
+        [runtime, "ps", "--format", "{{.Names}} {{.Ports}}"],
+        capture_output=True,
+        text=True,
+    )
+
+    if port_check.stdout.strip():
+        # Check for container using port 9042
+        for line in port_check.stdout.strip().split("\n"):
+            if "9042" in line:
+                existing_container = line.split()[0]
+                print(f"Using existing Cassandra container: {existing_container}")
+
+                container = CassandraContainer()
+                container.container_name = existing_container
+                container.container_id = existing_container
+                container.runtime = runtime
+
+                # Ensure test keyspace exists
+                container.execute_cql(
+                    """
+                    CREATE KEYSPACE IF NOT EXISTS test_keyspace
+                    WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
+                """
+                )
+
+                yield container
+                # Don't stop/remove containers we didn't create
+                return
+
+    # No existing container, create new one
     container = CassandraContainer()
     container.start()
 

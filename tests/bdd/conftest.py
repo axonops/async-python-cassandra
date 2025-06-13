@@ -30,16 +30,7 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture
-def cassandra_container():
-    """Mock Cassandra container for BDD tests."""
-    from unittest.mock import Mock
-
-    container = Mock()
-    container.is_running = Mock(return_value=True)
-    container.stop = Mock()
-    container.start = Mock()
-    return container
+# Removed mock cassandra_container fixture - using real one from tests._fixtures.cassandra
 
 
 @pytest.fixture
