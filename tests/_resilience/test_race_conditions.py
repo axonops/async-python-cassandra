@@ -112,6 +112,7 @@ class TestRaceConditions:
 
     @pytest.mark.resilience
     @pytest.mark.critical
+    @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_concurrent_session_operations(self):
         """Test concurrent operations on same session."""
         mock_session = Mock()
@@ -148,6 +149,7 @@ class TestRaceConditions:
         assert counts == list(range(1, 51))
 
     @pytest.mark.resilience
+    @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_page_callback_deadlock_prevention(self):
         """Test prevention of deadlock in paging callbacks."""
         from async_cassandra.result import AsyncResultSet
@@ -190,6 +192,7 @@ class TestRaceConditions:
         assert second_iteration == [1, 2, 3]
 
     @pytest.mark.resilience
+    @pytest.mark.timeout(5)  # Add timeout to prevent hanging
     async def test_session_close_during_query(self):
         """Test closing session while queries are in flight."""
         mock_session = Mock()
@@ -234,6 +237,7 @@ class TestRaceConditions:
 
     @pytest.mark.resilience
     @pytest.mark.critical
+    @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_thread_pool_saturation(self):
         """Test behavior when thread pool is saturated."""
         from async_cassandra.cluster import AsyncCluster
@@ -286,6 +290,7 @@ class TestRaceConditions:
         assert all(result._rows == [{"id": 1}] for result in results)
 
     @pytest.mark.resilience
+    @pytest.mark.timeout(5)  # Add timeout to prevent hanging
     async def test_event_loop_callback_ordering(self):
         """Test that callbacks maintain order when scheduled."""
         from async_cassandra.utils import safe_call_soon_threadsafe
@@ -315,6 +320,7 @@ class TestRaceConditions:
         assert sorted(results) == list(range(10))
 
     @pytest.mark.resilience
+    @pytest.mark.timeout(10)  # Add timeout to prevent hanging
     async def test_prepared_statement_concurrent_access(self):
         """Test concurrent access to prepared statements."""
         mock_session = Mock()

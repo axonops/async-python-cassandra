@@ -176,6 +176,7 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     @pytest.mark.critical
+    @pytest.mark.timeout(5)  # Add timeout to prevent hanging
     async def test_graceful_shutdown_with_pending_queries(self):
         """Test graceful shutdown when queries are pending."""
         mock_session = Mock()
