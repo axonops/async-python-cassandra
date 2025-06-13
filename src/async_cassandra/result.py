@@ -164,6 +164,10 @@ class AsyncResultSet:
         """Return number of rows in the result set."""
         return len(self._rows)
 
+    def __getitem__(self, index: int) -> Any:
+        """Get row by index."""
+        return self._rows[index]
+
     @property
     def rows(self) -> List[Any]:
         """Get all rows as a list."""

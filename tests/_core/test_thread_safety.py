@@ -6,7 +6,7 @@ integration that enables the async wrapper to work correctly.
 
 import asyncio
 import threading
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -158,26 +158,35 @@ class TestThreadPoolConfiguration:
     async def test_concurrent_operations_within_limit(self):
         """Test handling concurrent operations within thread pool limit."""
         from async_cassandra.session import AsyncCassandraSession as AsyncSession
+        from cassandra.cluster import ResponseFuture
 
         mock_session = Mock()
         results = []
 
-        async def mock_execute(*args):
-            await asyncio.sleep(0.01)  # Simulate work
+        def mock_execute_async(*args, **kwargs):
+            mock_future = Mock(spec=ResponseFuture)
+            mock_future.result.return_value = Mock(rows=[])
+            mock_future.timeout = None
+            mock_future.has_more_pages = False
             results.append(1)
-            return Mock()
+            return mock_future
 
-        mock_session.execute.side_effect = lambda *args: mock_execute(*args)
+        mock_session.execute_async.side_effect = mock_execute_async
 
         async_session = AsyncSession(mock_session)
 
         # Run operations concurrently
-        tasks = []
-        for i in range(10):
-            task = asyncio.create_task(async_session.execute(f"SELECT * FROM table{i}"))
-            tasks.append(task)
+        with patch("async_cassandra.session.AsyncResultHandler") as mock_handler_class:
+            mock_handler = Mock()
+            mock_handler.get_result = AsyncMock(return_value=Mock(rows=[]))
+            mock_handler_class.return_value = mock_handler
+            
+            tasks = []
+            for i in range(10):
+                task = asyncio.create_task(async_session.execute(f"SELECT * FROM table{i}"))
+                tasks.append(task)
 
-        await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks)
 
         # All operations should complete
         assert len(results) == 10

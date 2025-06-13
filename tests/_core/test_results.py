@@ -42,7 +42,7 @@ class TestAsyncResultHandler:
         # Simulate the driver calling our success callback
         mock_result = Mock()
         mock_result.current_rows = [{"id": 1}, {"id": 2}]
-        handler._handle_page(mock_result)
+        handler._handle_page(mock_result.current_rows)
 
         result = await result_future
         assert isinstance(result, AsyncResultSet)
@@ -79,13 +79,13 @@ class TestAsyncResultHandler:
         # First success should set the result
         mock_result = Mock()
         mock_result.current_rows = [{"id": 1}]
-        handler._handle_page(mock_result)
+        handler._handle_page(mock_result.current_rows)
 
         result = await result_future
         assert isinstance(result, AsyncResultSet)
 
         # Subsequent calls should be ignored (no exceptions)
-        handler._handle_page(Mock(current_rows=[{"id": 2}]))
+        handler._handle_page([{"id": 2}])
         handler._handle_error(Exception("should be ignored"))
 
 
@@ -126,7 +126,7 @@ class TestAsyncResultSet:
         rows = [{"id": 1, "name": "test"}]
         async_result = AsyncResultSet(rows)
 
-        result = await async_result.one()
+        result = async_result.one()
         assert result == {"id": 1, "name": "test"}
 
     @pytest.mark.core
@@ -135,7 +135,7 @@ class TestAsyncResultSet:
         rows = [{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}]
         async_result = AsyncResultSet(rows)
 
-        results = await async_result.all()
+        results = async_result.all()
         assert results == rows
 
     @pytest.mark.core
