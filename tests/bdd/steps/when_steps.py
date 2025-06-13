@@ -9,12 +9,14 @@ from pytest_bdd import parsers, when
 from async_cassandra import AsyncCluster
 
 
-@when("I create an async session")
-async def create_async_session(connection_parameters):
+@when("I create an async session", target_fixture="test_context")
+async def create_async_session(connection_parameters, test_context):
     """Create an async session."""
     cluster = AsyncCluster(**connection_parameters)
     session = await cluster.connect()
-    return {"cluster": cluster, "session": session}
+    test_context["cluster"] = cluster
+    test_context["session"] = session
+    return test_context
 
 
 @when(parsers.parse("I create {count:d} async sessions simultaneously"))

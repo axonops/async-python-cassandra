@@ -61,6 +61,36 @@ def cassandra_cluster_running(cassandra_container):
     return cassandra_container
 
 
+@pytest.fixture
+def async_cluster():
+    """Fixture to hold async cluster instance."""
+    return None
+
+
+@pytest.fixture
+def async_session():
+    """Fixture to hold async session instance."""
+    return None
+
+
+@pytest.fixture
+def query_result():
+    """Fixture to hold query results."""
+    return None
+
+
+@pytest.fixture
+def error_raised():
+    """Fixture to hold raised errors."""
+    return None
+
+
+@pytest.fixture
+def test_context():
+    """Shared context for BDD tests."""
+    return {}
+
+
 # BDD-specific configuration
 def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func_args, exception):
     """Enhanced error reporting for BDD steps."""
