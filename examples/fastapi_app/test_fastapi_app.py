@@ -12,6 +12,7 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport
 
 
 class TestFastAPIExample:
@@ -22,7 +23,8 @@ class TestFastAPIExample:
         """Create test client for the FastAPI app."""
         from main import app
 
-        async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             # Wait for app startup
             await asyncio.sleep(0.5)
             yield client
