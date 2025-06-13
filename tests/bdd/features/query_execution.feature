@@ -48,7 +48,7 @@ Feature: Query Execution
     And the error message should indicate the syntax problem
     And the session should remain usable for subsequent queries
 
-  @timeout
+  @error_handling
   Scenario: Respect query timeouts
     Given a table with 1 million rows
     When I execute a full table scan with a 1 second timeout

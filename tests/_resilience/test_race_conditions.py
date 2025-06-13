@@ -192,12 +192,13 @@ class TestRaceConditions:
         assert second_iteration == [1, 2, 3]
 
     @pytest.mark.resilience
-    @pytest.mark.timeout(5)  # Add timeout to prevent hanging
+    @pytest.mark.timeout(15)  # Increase timeout to account for 5s shutdown delay
     async def test_session_close_during_query(self):
         """Test closing session while queries are in flight."""
         mock_session = Mock()
         query_started = asyncio.Event()
         query_can_proceed = asyncio.Event()
+        shutdown_called = asyncio.Event()
 
         def blocking_execute(*args):
             # Create a mock ResponseFuture that blocks
@@ -219,7 +220,12 @@ class TestRaceConditions:
             return mock_future
 
         mock_session.execute_async.side_effect = blocking_execute
-        mock_session.shutdown.side_effect = lambda: query_can_proceed.set()
+
+        def mock_shutdown():
+            shutdown_called.set()
+            query_can_proceed.set()
+
+        mock_session.shutdown = mock_shutdown
 
         async_session = AsyncSession(mock_session)
 
@@ -229,11 +235,20 @@ class TestRaceConditions:
         # Wait for query to start
         await query_started.wait()
 
-        # Close session (should unblock query)
-        await async_session.close()
+        # Start closing session in background (includes 5s delay)
+        close_task = asyncio.create_task(async_session.close())
 
-        # Query should complete (not hang)
-        await asyncio.wait_for(query_task, timeout=1.0)
+        # Wait for driver shutdown
+        await shutdown_called.wait()
+
+        # Query should complete during the 5s delay
+        await query_task
+
+        # Wait for close to fully complete
+        await close_task
+
+        # Session should be closed
+        assert async_session.is_closed
 
     @pytest.mark.resilience
     @pytest.mark.critical

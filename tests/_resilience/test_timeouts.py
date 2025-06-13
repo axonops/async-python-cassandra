@@ -186,21 +186,39 @@ class TestTimeoutHandling:
         assert mock_session.execute_async.call_count == 2
 
     @pytest.mark.resilience
-    @pytest.mark.timeout(5)  # Add timeout to prevent hanging
+    @pytest.mark.timeout(15)  # Increase timeout to account for 5s shutdown delay
     async def test_timeout_cleanup_on_session_close(self):
         """Test that pending timeouts are cleaned up when session closes."""
         mock_session = Mock()
+        shutdown_complete = asyncio.Event()
 
         # Create mock ResponseFutures that simulate hanging
+        pending_futures = []
+
         def create_hanging_future(*args, **kwargs):
             mock_future = Mock(spec=ResponseFuture)
             mock_future.has_more_pages = False
             mock_future.timeout = None
             mock_future.add_callbacks = Mock()
-            # Don't call callbacks to simulate hanging
+
+            # Track callbacks
+            callbacks = []
+
+            def track_callbacks(callback=None, errback=None):
+                callbacks.append((callback, errback))
+
+            mock_future.add_callbacks.side_effect = track_callbacks
+            mock_future._callbacks = callbacks
+            pending_futures.append(mock_future)
             return mock_future
 
         mock_session.execute_async.side_effect = create_hanging_future
+
+        def mock_shutdown():
+            # Simulate cleanup of pending operations
+            shutdown_complete.set()
+
+        mock_session.shutdown = mock_shutdown
 
         async_session = AsyncSession(mock_session)
 
@@ -211,18 +229,27 @@ class TestTimeoutHandling:
             tasks.append(task)
 
         # Give tasks a moment to start
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
 
-        # Close session
-        await async_session.close()
+        # Start closing session in background
+        close_task = asyncio.create_task(async_session.close())
 
-        # Cancel all tasks to clean up
+        # Wait for driver shutdown
+        await shutdown_complete.wait()
+
+        # Cancel hanging tasks during the 5s delay
         for task in tasks:
             if not task.done():
                 task.cancel()
 
         # Wait for tasks to be cancelled
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Wait for close to complete
+        await close_task
+
+        # Session should be closed
+        assert async_session.is_closed
 
     @pytest.mark.resilience
     def test_timeout_configuration(self):

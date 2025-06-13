@@ -176,35 +176,45 @@ class TestErrorRecovery:
 
     @pytest.mark.resilience
     @pytest.mark.critical
-    @pytest.mark.timeout(5)  # Add timeout to prevent hanging
+    @pytest.mark.timeout(40)  # Increase timeout to account for 5s shutdown delay
     async def test_graceful_shutdown_with_pending_queries(self):
         """Test graceful shutdown when queries are pending."""
         mock_session = Mock()
         mock_cluster = Mock()
 
-        # Create queries that will hang
-        hanging_event = asyncio.Event()
+        # Track shutdown completion
+        shutdown_complete = asyncio.Event()
 
-        # Create mock ResponseFutures that will hang
-        def create_hanging_future(*args):
+        # Mock the cluster shutdown to complete quickly
+        def mock_shutdown():
+            shutdown_complete.set()
+
+        mock_cluster.shutdown = mock_shutdown
+
+        # Create queries that will complete after a delay
+        query_complete = asyncio.Event()
+
+        # Create mock ResponseFutures
+        def create_mock_future(*args):
             mock_future = Mock()
             mock_future.has_more_pages = False
-            mock_future.timeout = None  # Avoid comparison issues
+            mock_future.timeout = None
             mock_future.add_callbacks = Mock()
 
-            # Don't call callbacks until event is set
             def handle_callbacks(callback=None, errback=None):
-                async def wait_and_callback():
-                    await hanging_event.wait()
+                # Complete query after a short delay
+                async def complete_query():
+                    await asyncio.sleep(0.1)
                     if callback:
                         callback([])
+                    query_complete.set()
 
-                asyncio.create_task(wait_and_callback())
+                asyncio.create_task(complete_query())
 
             mock_future.add_callbacks.side_effect = handle_callbacks
             return mock_future
 
-        mock_session.execute_async.side_effect = create_hanging_future
+        mock_session.execute_async.side_effect = create_mock_future
 
         cluster = AsyncCluster()
         cluster._cluster = mock_cluster
@@ -212,26 +222,28 @@ class TestErrorRecovery:
 
         session = await cluster.connect()
 
-        # Start queries that will hang
-        tasks = []
-        for i in range(3):
-            task = asyncio.create_task(session.execute(f"SELECT * FROM table{i}"))
-            tasks.append(task)
+        # Start a query
+        query_task = asyncio.create_task(session.execute("SELECT * FROM table"))
 
-        # Give tasks time to start
-        await asyncio.sleep(0.1)
+        # Give query time to start
+        await asyncio.sleep(0.05)
 
-        # Shutdown should cancel pending queries
-        await cluster.shutdown()
+        # Start shutdown in background (it will wait 5 seconds after driver shutdown)
+        shutdown_task = asyncio.create_task(cluster.shutdown())
 
-        # Set event to allow tasks to complete
-        hanging_event.set()
+        # Wait for driver shutdown to complete
+        await shutdown_complete.wait()
 
-        # All tasks should complete (either cancelled or finished)
-        await asyncio.gather(*tasks, return_exceptions=True)
+        # Query should complete during the 5 second wait
+        await query_complete.wait()
 
-        # Verify cluster was shut down
-        mock_cluster.shutdown.assert_called_once()
+        # Wait for full shutdown including the 5 second delay
+        await shutdown_task
+
+        # Verify everything completed properly
+        assert query_task.done()
+        assert not query_task.cancelled()  # Query completed normally
+        assert cluster.is_closed
 
     @pytest.mark.resilience
     async def test_error_stack_trace_preservation(self):

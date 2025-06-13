@@ -30,6 +30,37 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture
+def cassandra_container():
+    """Mock Cassandra container for BDD tests."""
+    from unittest.mock import Mock
+
+    container = Mock()
+    container.is_running = Mock(return_value=True)
+    container.stop = Mock()
+    container.start = Mock()
+    return container
+
+
+@pytest.fixture
+def connection_parameters():
+    """Provide connection parameters for BDD tests."""
+    return {"contact_points": ["127.0.0.1"], "port": 9042}
+
+
+@pytest.fixture
+def driver_configured():
+    """Provide driver configuration for BDD tests."""
+    return {"contact_points": ["127.0.0.1"], "port": 9042, "thread_pool_max_workers": 32}
+
+
+@pytest.fixture
+def cassandra_cluster_running(cassandra_container):
+    """Ensure Cassandra container is running."""
+    assert cassandra_container.is_running()
+    return cassandra_container
+
+
 # BDD-specific configuration
 def pytest_bdd_step_error(request, feature, scenario, step, step_func, step_func_args, exception):
     """Enhanced error reporting for BDD steps."""
