@@ -1,8 +1,5 @@
 """
-Simplified async cluster management for Cassandra connections.
-
-This implementation focuses on being a thin wrapper around the driver cluster,
-avoiding complex state management.
+Async cluster management for Cassandra connections.
 """
 
 import asyncio
@@ -20,20 +17,17 @@ from cassandra.policies import (
     TokenAwarePolicy,
 )
 
-from .base import AsyncContextManageable
+from .base import AsyncCloseable, AsyncContextManageable
 from .exceptions import ConnectionError
 from .retry_policy import AsyncRetryPolicy
 from .session import AsyncCassandraSession
 
 
-class AsyncCluster(AsyncContextManageable):
+class AsyncCluster(AsyncCloseable, AsyncContextManageable):
     """
-    Simplified async wrapper for Cassandra Cluster.
+    Async wrapper for Cassandra Cluster.
 
-    This implementation:
-    - Uses a single lock only for close operations
-    - Focuses on being a thin wrapper without complex state management
-    - Accepts reasonable trade-offs for simplicity
+    Manages cluster configuration and connection lifecycle with async support.
     """
 
     def __init__(
@@ -116,9 +110,8 @@ class AsyncCluster(AsyncContextManageable):
         # Merge with any additional kwargs
         cluster_kwargs.update(kwargs)
 
+        super().__init__()
         self._cluster = Cluster(**cluster_kwargs)
-        self._closed = False
-        self._close_lock = asyncio.Lock()
 
     @classmethod
     def create_with_auth(
@@ -154,80 +147,42 @@ class AsyncCluster(AsyncContextManageable):
             New AsyncCassandraSession.
 
         Raises:
-            ConnectionError: If connection fails or cluster is closed.
+            ConnectionError: If connection fails.
             asyncio.TimeoutError: If connection times out.
         """
-        # Simple closed check - no lock needed for read
-        if self._closed:
+        if self.is_closed:
             raise ConnectionError("Cluster is closed")
 
         # Import here to avoid circular import
-        from .constants import DEFAULT_CONNECTION_TIMEOUT, MAX_RETRY_ATTEMPTS
+        from .constants import DEFAULT_CONNECTION_TIMEOUT
 
         if timeout is None:
             timeout = DEFAULT_CONNECTION_TIMEOUT
 
-        last_error = None
-        for attempt in range(MAX_RETRY_ATTEMPTS):
-            try:
-                session = await asyncio.wait_for(
-                    AsyncCassandraSession.create(self._cluster, keyspace), timeout=timeout
-                )
-                return session
+        try:
+            session = await asyncio.wait_for(
+                AsyncCassandraSession.create(self._cluster, keyspace), timeout=timeout
+            )
+            return session
 
-            except asyncio.TimeoutError:
-                raise
-            except Exception as e:
-                last_error = e
-                if attempt < MAX_RETRY_ATTEMPTS - 1:
-                    # Log retry attempt
-                    import logging
+        except asyncio.TimeoutError:
+            raise
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to cluster: {str(e)}") from e
 
-                    logger = logging.getLogger(__name__)
-                    logger.warning(
-                        f"Connection attempt {attempt + 1} failed: {str(e)}. "
-                        f"Retrying... ({attempt + 2}/{MAX_RETRY_ATTEMPTS})"
-                    )
-                    # Small delay before retry to allow service to recover
-                    # Use longer delay for NoHostAvailable errors
-                    if "NoHostAvailable" in str(type(e).__name__):
-                        await asyncio.sleep(2.0 * (attempt + 1))
-                    else:
-                        await asyncio.sleep(0.5 * (attempt + 1))
-
-        raise ConnectionError(
-            f"Failed to connect to cluster after {MAX_RETRY_ATTEMPTS} attempts: {str(last_error)}"
-        ) from last_error
-
-    async def close(self) -> None:
-        """
-        Close the cluster and release all resources.
-
-        This method is idempotent and can be called multiple times safely.
-        Uses a single lock to ensure shutdown is called only once.
-        """
-        async with self._close_lock:
-            if not self._closed:
-                self._closed = True
-                loop = asyncio.get_event_loop()
-                # Use a reasonable timeout for shutdown operations
-                await asyncio.wait_for(
-                    loop.run_in_executor(None, self._cluster.shutdown), timeout=30.0
-                )
+    async def _do_close(self) -> None:
+        """Perform the actual cluster shutdown."""
+        loop = asyncio.get_event_loop()
+        # Use a reasonable timeout for shutdown operations
+        await asyncio.wait_for(loop.run_in_executor(None, self._cluster.shutdown), timeout=30.0)
 
     async def shutdown(self) -> None:
         """
         Shutdown the cluster and release all resources.
 
         This method is idempotent and can be called multiple times safely.
-        Alias for close() to match driver API.
         """
         await self.close()
-
-    @property
-    def is_closed(self) -> bool:
-        """Check if the cluster is closed."""
-        return self._closed
 
     @property
     def metadata(self) -> Metadata:

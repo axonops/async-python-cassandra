@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.mark.integration
 class TestFastAPIComprehensive:
     """Comprehensive tests for FastAPI integration following TDD principles."""
 

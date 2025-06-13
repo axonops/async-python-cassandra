@@ -2,6 +2,7 @@
 Unit tests for streaming functionality.
 """
 
+import asyncio
 from unittest.mock import Mock
 
 import pytest
@@ -115,14 +116,16 @@ class TestAsyncStreamingResultSet:
         """Test error handling during streaming."""
         result_set = AsyncStreamingResultSet(mock_response_future)
 
-        # Simulate error
+        # Initialize the event loop and page_ready event
+        result_set._loop = asyncio.get_running_loop()
+        result_set._page_ready = asyncio.Event()
+
+        # Simulate error which will set the page_ready event
         test_error = Exception("Query failed")
         result_set._handle_error(test_error)
 
         # Should raise error when iterating
         with pytest.raises(Exception) as exc_info:
-            # Set first_page_ready to avoid waiting
-            result_set._first_page_ready = True
             async for _ in result_set:
                 pass
 
@@ -212,14 +215,16 @@ class TestStreamingResultHandler:
         assert isinstance(result, AsyncStreamingResultSet)
         assert result.response_future == mock_response_future
 
+        # Initialize the event loop and page_ready event
+        result._loop = asyncio.get_running_loop()
+        result._page_ready = asyncio.Event()
+
         # Test error handling by simulating an error in the result set
         test_error = Exception("Connection failed")
         result._handle_error(test_error)
 
         # Should raise error when iterating
         with pytest.raises(Exception) as exc_info:
-            # Set first_page_ready to avoid waiting
-            result._first_page_ready = True
             async for _ in result:
                 pass
 

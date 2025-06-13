@@ -22,6 +22,7 @@ from async_cassandra.result import AsyncResultHandler
 from async_cassandra.streaming import AsyncStreamingResultSet
 
 
+@pytest.mark.integration
 class TestThreadSafetyIssues:
     """Tests for thread safety issues between driver threads and asyncio."""
 
@@ -180,6 +181,7 @@ class TestThreadSafetyIssues:
         asyncio.run(run_test())
 
 
+@pytest.mark.integration
 class TestMemoryLeakIssues:
     """Tests for memory leaks in streaming functionality."""
 
@@ -367,6 +369,7 @@ class TestMemoryLeakIssues:
         asyncio.run(run_test())
 
 
+@pytest.mark.integration
 class TestErrorHandlingInconsistencies:
     """Tests for error handling inconsistencies in the framework."""
 

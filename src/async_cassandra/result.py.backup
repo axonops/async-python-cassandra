@@ -1,8 +1,5 @@
 """
-Simplified async result handling for Cassandra queries.
-
-This implementation focuses on essential functionality without
-complex state tracking.
+Async result handling for Cassandra queries.
 """
 
 import asyncio
@@ -14,21 +11,23 @@ from cassandra.cluster import ResponseFuture
 
 class AsyncResultHandler:
     """
-    Simplified handler for asynchronous results from Cassandra queries.
+    Handles asynchronous results from Cassandra queries.
 
     This class wraps ResponseFuture callbacks in asyncio Futures,
-    providing async/await support with minimal complexity.
+    providing proper async/await support for query results.
     """
 
     def __init__(self, response_future: ResponseFuture):
         self.response_future = response_future
         self.rows: List[Any] = []
         self._future: Optional[asyncio.Future[AsyncResultSet]] = None
-        # Thread lock is necessary since callbacks come from driver threads
+        # Thread lock to protect shared state from concurrent driver callbacks
         self._lock = threading.Lock()
-        # Store early results/errors if callbacks fire before get_result
-        self._early_result: Optional[AsyncResultSet] = None
-        self._early_error: Optional[Exception] = None
+        # Track if we've been initialized with a future
+        self._future_initialized = False
+        # Track if result is ready (for early callback case)
+        self._result_ready = False
+        self._result_error: Optional[Exception] = None
 
         # Set up callbacks
         self.response_future.add_callbacks(callback=self._handle_page, errback=self._handle_error)
@@ -56,17 +55,17 @@ class AsyncResultHandler:
             if self.response_future.has_more_pages:
                 self.response_future.start_fetching_next_page()
             else:
-                # All pages fetched
+                # All pages fetched, set result
                 # Create a copy of rows to avoid reference issues
-                final_result = AsyncResultSet(list(self.rows))
-
+                final_rows = list(self.rows)
                 if self._future and not self._future.done():
-                    loop = getattr(self, "_loop", None)
-                    if loop:
-                        loop.call_soon_threadsafe(self._future.set_result, final_result)
+                    if hasattr(self, "_loop"):
+                        self._loop.call_soon_threadsafe(
+                            self._future.set_result, AsyncResultSet(final_rows)
+                        )
                 else:
-                    # Store for later if future doesn't exist yet
-                    self._early_result = final_result
+                    # Future not ready yet, mark result as ready for later
+                    self._result_ready = True
 
                 # Clean up callbacks after completion
                 self._cleanup_callbacks()
@@ -75,12 +74,12 @@ class AsyncResultHandler:
         """Handle query execution error."""
         with self._lock:
             if self._future and not self._future.done():
-                loop = getattr(self, "_loop", None)
-                if loop:
-                    loop.call_soon_threadsafe(self._future.set_exception, exc)
+                if hasattr(self, "_loop"):
+                    self._loop.call_soon_threadsafe(self._future.set_exception, exc)
             else:
-                # Store for later if future doesn't exist yet
-                self._early_error = exc
+                # Future not ready yet, store error for later
+                self._result_error = exc
+                self._result_ready = True
 
         # Clean up callbacks to prevent memory leaks
         self._cleanup_callbacks()
@@ -90,7 +89,8 @@ class AsyncResultHandler:
         Wait for the query to complete and return the result.
 
         Args:
-            timeout: Optional timeout in seconds.
+            timeout: Optional timeout in seconds. If None, uses the query timeout
+                    from the ResponseFuture if available.
 
         Returns:
             AsyncResultSet containing all rows from the query.
@@ -98,19 +98,24 @@ class AsyncResultHandler:
         Raises:
             asyncio.TimeoutError: If the query doesn't complete within the timeout.
         """
-        # Create future in the current event loop
+        # Create future on first use to ensure it's created in the right event loop
         loop = asyncio.get_running_loop()
-        self._future = loop.create_future()
-        self._loop = loop  # Store loop for callbacks
+        if not self._future_initialized:
+            self._future = loop.create_future()
+            self._future_initialized = True
+            self._loop = loop  # Store loop for callbacks
 
-        # Check if result/error is already available (callback might have fired early)
-        with self._lock:
-            if self._early_error:
-                self._future.set_exception(self._early_error)
-            elif self._early_result:
-                self._future.set_result(self._early_result)
-            elif not self.response_future.has_more_pages and self.rows:
-                self._future.set_result(AsyncResultSet(list(self.rows)))
+            # Check if result is already ready (callback fired early)
+            with self._lock:
+                if self._result_ready:
+                    if self._result_error:
+                        self._future.set_exception(self._result_error)
+                    else:
+                        # Result is ready, set it now
+                        self._future.set_result(AsyncResultSet(list(self.rows)))
+
+        if self._future is None:
+            raise RuntimeError("Future not initialized")
 
         # Use query timeout if no explicit timeout provided
         if (

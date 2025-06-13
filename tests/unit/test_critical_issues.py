@@ -11,6 +11,8 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
 
+import pytest
+
 from async_cassandra.result import AsyncResultHandler
 from async_cassandra.streaming import AsyncStreamingResultSet, StreamConfig
 
@@ -339,7 +341,8 @@ class TestStreamingMemoryLeaks:
 class TestErrorHandlingConsistency:
     """Unit tests for error handling consistency."""
 
-    def test_execute_vs_execute_stream_error_wrapping(self):
+    @pytest.mark.asyncio
+    async def test_execute_vs_execute_stream_error_wrapping(self):
         """
         GIVEN the same underlying error
         WHEN it occurs in execute() vs execute_stream()
@@ -352,23 +355,18 @@ class TestErrorHandlingConsistency:
 
         # Test execute() error handling with AsyncResultHandler
         execute_error = None
+        mock_future = Mock()
+        mock_future.add_callbacks = Mock()
+        mock_future.has_more_pages = False
+        mock_future.timeout = None  # Add timeout attribute
 
-        async def test_execute():
-            nonlocal execute_error
-            mock_future = Mock()
-            mock_future.add_callbacks = Mock()
-            mock_future.has_more_pages = False
-            mock_future.timeout = None  # Add timeout attribute
-
-            handler = AsyncResultHandler(mock_future)
-            # Simulate error callback being called after init
-            handler._handle_error(base_error)
-            try:
-                await handler.get_result()
-            except Exception as e:
-                execute_error = e
-
-        asyncio.run(test_execute())
+        handler = AsyncResultHandler(mock_future)
+        # Simulate error callback being called after init
+        handler._handle_error(base_error)
+        try:
+            await handler.get_result()
+        except Exception as e:
+            execute_error = e
 
         # Test execute_stream() error handling with AsyncStreamingResultSet
         # We need to test error handling without async iteration to avoid complexity

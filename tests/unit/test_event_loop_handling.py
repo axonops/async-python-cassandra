@@ -16,7 +16,7 @@ class TestEventLoopHandling:
     """Test that event loop references are not stored."""
 
     async def test_result_handler_no_stored_loop_reference(self):
-        """Test that AsyncResultHandler doesn't store event loop reference."""
+        """Test that AsyncResultHandler doesn't store event loop reference initially."""
         # Create handler
         response_future = Mock()
         response_future.has_more_pages = False
@@ -25,11 +25,13 @@ class TestEventLoopHandling:
 
         handler = AsyncResultHandler(response_future)
 
-        # Verify no _loop attribute
+        # Verify no _loop attribute initially
         assert not hasattr(handler, "_loop")
-        # Only future-related attributes should exist
-        assert hasattr(handler, "_future")
-        assert hasattr(handler, "_future_initialized")
+        # Future should be None initially
+        assert handler._future is None
+        # Should have early result/error tracking
+        assert hasattr(handler, "_early_result")
+        assert hasattr(handler, "_early_error")
 
     async def test_streaming_no_stored_loop_reference(self):
         """Test that AsyncStreamingResultSet doesn't store event loop reference initially."""
@@ -55,7 +57,6 @@ class TestEventLoopHandling:
 
         # Future should not be created yet
         assert handler._future is None
-        assert not handler._future_initialized
 
         # Start get_result task
         result_task = asyncio.create_task(handler.get_result())
@@ -63,7 +64,7 @@ class TestEventLoopHandling:
 
         # Future should now be created
         assert handler._future is not None
-        assert handler._future_initialized
+        assert hasattr(handler, "_loop")
 
         # Trigger callback to complete the future
         args = response_future.add_callbacks.call_args

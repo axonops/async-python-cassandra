@@ -111,8 +111,8 @@ class TestStreamingMemoryLeak:
             assert len(result_set._current_page) == 0
             assert result_set._current_index == 0
 
-    async def test_del_method_clears_memory(self):
-        """Test that __del__ method properly clears memory."""
+    async def test_close_clears_memory(self):
+        """Test that close() method properly clears memory."""
         # Mock ResponseFuture
         response_future = Mock()
         response_future.has_more_pages = False
@@ -130,12 +130,13 @@ class TestStreamingMemoryLeak:
         # Verify data is there
         assert len(result_set._current_page) == 3
 
-        # Call __del__ directly (normally called by garbage collector)
-        result_set.__del__()
+        # Close the result set
+        await result_set.close()
 
-        # Verify cleanup - __del__ only clears _current_page
+        # Verify cleanup - close() clears _current_page
         assert result_set._current_page == []
-        # response_future is not cleared by __del__ (it's managed by the driver)
+        assert result_set._closed
+        assert result_set._exhausted
 
     async def test_error_during_page_callback_clears_memory(self):
         """Test that errors in page callback still clear memory properly."""
