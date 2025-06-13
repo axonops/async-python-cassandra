@@ -5,7 +5,7 @@ connection errors, and proper error propagation through the async layer.
 """
 
 import asyncio
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from cassandra import ConsistencyLevel, InvalidRequest, Unavailable
@@ -23,15 +23,17 @@ class TestErrorRecovery:
     @pytest.mark.critical
     async def test_no_host_available_error(self):
         """Test handling of NoHostAvailable errors."""
-        mock_session = Mock()
         errors = {
             "127.0.0.1": ConnectionRefusedError("Connection refused"),
             "127.0.0.2": TimeoutError("Connection timeout"),
         }
-        mock_session.execute.side_effect = NoHostAvailable(
+        
+        # Create a real async session with mocked underlying session
+        mock_session = Mock()
+        mock_session.execute_async.side_effect = NoHostAvailable(
             "Unable to connect to any servers", errors
         )
-
+        
         async_session = AsyncSession(mock_session)
 
         with pytest.raises(NoHostAvailable) as exc_info:

@@ -11,7 +11,7 @@ from cassandra import ConsistencyLevel
 from cassandra.policies import RetryPolicy, WriteType
 from cassandra.query import BatchStatement, SimpleStatement
 
-from async_cassandra.policies import AsyncRetryPolicy
+from async_cassandra.retry_policy import AsyncRetryPolicy
 
 
 class TestRetryPolicyCore:
