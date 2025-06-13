@@ -14,6 +14,7 @@ from async_cassandra import AsyncCluster
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 class TestCassandraDataTypes:
     """Test handling of all Cassandra data types."""
 

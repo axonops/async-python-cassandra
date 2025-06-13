@@ -13,6 +13,7 @@ from examples.fastapi_app.main_enhanced import app
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 class TestEnhancedFastAPIFeatures:
     """Test all enhanced features in the FastAPI example."""
 

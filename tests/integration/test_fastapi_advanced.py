@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.mark.integration
 class TestFastAPIAdvancedScenarios:
     """Advanced test scenarios for FastAPI integration."""
 
