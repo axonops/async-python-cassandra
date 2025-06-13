@@ -99,7 +99,7 @@ markers = [
     "features: Advanced feature tests",
     "integration: Tests requiring real Cassandra",
     "fastapi: FastAPI integration tests",
-    "bdd: Business-driven acceptance tests",
+    "bdd: Business-driven development tests",
     "performance: Performance and stress tests",
     
     # Priority markers
@@ -112,7 +112,6 @@ markers = [
     
     # Legacy markers (kept for compatibility)
     "stress: marks tests as stress tests for high load scenarios",
-    "acceptance: marks tests as BDD acceptance tests for user workflows",
     "benchmark: marks tests as performance benchmarks with thresholds",
 ]
 

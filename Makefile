@@ -19,7 +19,7 @@ help:
 	@echo "  test-integration Run integration tests (auto-manages containers)"
 	@echo "  test-integration-keep Run integration tests (keeps containers running)"
 	@echo "  test-stress    Run stress tests"
-	@echo "  test-bdd       Run BDD acceptance tests"
+	@echo "  test-bdd       Run BDD tests"
 	@echo "  test-all       Run ALL tests (unit, integration, stress, and BDD)"
 	@echo ""
 	@echo "Test Categories:"
@@ -102,7 +102,7 @@ test-performance:
 
 # BDD tests
 test-bdd:
-	@echo "Running BDD acceptance tests..."
+	@echo "Running BDD tests..."
 	pytest tests/bdd -v --cucumber-json=reports/bdd.json
 
 # Legacy test commands (for compatibility)
