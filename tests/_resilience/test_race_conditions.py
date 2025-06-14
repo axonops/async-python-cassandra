@@ -287,6 +287,7 @@ class TestRaceConditions:
         mock_cluster.connect.return_value = mock_session
 
         cluster._cluster = mock_cluster
+        cluster._cluster.protocol_version = 5  # Mock protocol version
 
         session = await cluster.connect()
 

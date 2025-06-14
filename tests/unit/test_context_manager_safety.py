@@ -38,12 +38,12 @@ class TestContextManagerSafety:
 
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster_class.return_value = mock_cluster
-            
+
             # Mock AsyncCassandraSession.create
             mock_async_session = MagicMock()
             mock_async_session._session = mock_session
             mock_async_session.close = AsyncMock()
-            
+
             with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
                 mock_create.return_value = mock_async_session
 
@@ -305,12 +305,14 @@ class TestContextManagerSafety:
             mock_async_session1._session = mock_session1
             mock_async_session1.close = AsyncMock()
             mock_async_session1.__aenter__ = AsyncMock(return_value=mock_async_session1)
-            mock_async_session1.__aexit__ = AsyncMock(side_effect=lambda *args: mock_async_session1.close())
-            
+            mock_async_session1.__aexit__ = AsyncMock(
+                side_effect=lambda *args: mock_async_session1.close()
+            )
+
             mock_async_session2 = MagicMock()
             mock_async_session2._session = mock_session2
             mock_async_session2.close = AsyncMock()
-            
+
             with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
                 mock_create.side_effect = [mock_async_session1, mock_async_session2]
 
@@ -510,15 +512,17 @@ class TestContextManagerSafety:
 
         with patch("async_cassandra.cluster.Cluster") as mock_cluster_class:
             mock_cluster_class.return_value = mock_cluster
-            
+
             # Mock AsyncCassandraSession.create
             mock_async_session = MagicMock()
             mock_async_session._session = mock_session
             mock_async_session.close = AsyncMock()
             mock_async_session.shutdown = AsyncMock()  # For when __aexit__ calls close()
             mock_async_session.__aenter__ = AsyncMock(return_value=mock_async_session)
-            mock_async_session.__aexit__ = AsyncMock(side_effect=lambda *args: mock_async_session.shutdown())
-            
+            mock_async_session.__aexit__ = AsyncMock(
+                side_effect=lambda *args: mock_async_session.shutdown()
+            )
+
             with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
                 mock_create.return_value = mock_async_session
 
@@ -569,20 +573,28 @@ class TestContextManagerSafety:
             mock_async_session1._session = mock_session
             mock_async_session1.close = AsyncMock()
             mock_async_session1.__aenter__ = AsyncMock(return_value=mock_async_session1)
-            mock_async_session1.__aexit__ = AsyncMock(side_effect=lambda *args: mock_async_session1.close())
-            
+            mock_async_session1.__aexit__ = AsyncMock(
+                side_effect=lambda *args: mock_async_session1.close()
+            )
+
             mock_async_session2 = MagicMock()
             mock_async_session2._session = mock_session
             mock_async_session2.close = AsyncMock()
-            
+
             mock_async_session3 = MagicMock()
             mock_async_session3._session = mock_session
             mock_async_session3.close = AsyncMock()
             mock_async_session3.__aenter__ = AsyncMock(return_value=mock_async_session3)
-            mock_async_session3.__aexit__ = AsyncMock(side_effect=lambda *args: mock_async_session3.close())
-            
+            mock_async_session3.__aexit__ = AsyncMock(
+                side_effect=lambda *args: mock_async_session3.close()
+            )
+
             with patch("async_cassandra.session.AsyncCassandraSession.create") as mock_create:
-                mock_create.side_effect = [mock_async_session1, mock_async_session2, mock_async_session3]
+                mock_create.side_effect = [
+                    mock_async_session1,
+                    mock_async_session2,
+                    mock_async_session3,
+                ]
 
                 # Create cluster (not in context manager)
                 cluster = AsyncCluster(["localhost"])

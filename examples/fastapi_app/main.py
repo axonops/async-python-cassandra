@@ -283,35 +283,35 @@ async def stream_users_by_pages(
             total_processed = 0
 
             async for page in result.pages():
-            page_size = len(page)
-            total_processed += page_size
+                page_size = len(page)
+                total_processed += page_size
 
-            # Extract sample user data, handling both dict-like and object-like access
-            sample_user = None
-            if page:
-                first_row = page[0]
-                if hasattr(first_row, '__getitem__'):
-                    # Dictionary-like access
-                    try:
-                        sample_user = {
-                            "id": str(first_row["id"]),
-                            "name": first_row["name"],
-                            "email": first_row["email"]
-                        }
-                    except (KeyError, TypeError):
-                        # Fall back to attribute access
+                # Extract sample user data, handling both dict-like and object-like access
+                sample_user = None
+                if page:
+                    first_row = page[0]
+                    if hasattr(first_row, '__getitem__'):
+                        # Dictionary-like access
+                        try:
+                            sample_user = {
+                                "id": str(first_row["id"]),
+                                "name": first_row["name"],
+                                "email": first_row["email"]
+                            }
+                        except (KeyError, TypeError):
+                            # Fall back to attribute access
+                            sample_user = {
+                                "id": str(first_row.id),
+                                "name": first_row.name,
+                                "email": first_row.email
+                            }
+                    else:
+                        # Object-like access
                         sample_user = {
                             "id": str(first_row.id),
                             "name": first_row.name,
                             "email": first_row.email
                         }
-                else:
-                    # Object-like access
-                    sample_user = {
-                        "id": str(first_row.id),
-                        "name": first_row.name,
-                        "email": first_row.email
-                    }
             
                 pages_info.append(
                     {

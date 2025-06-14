@@ -10,9 +10,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from cassandra import InvalidRequest
 
 from async_cassandra import AsyncCluster
-from cassandra import InvalidRequest
 from async_cassandra.streaming import StreamConfig
 
 

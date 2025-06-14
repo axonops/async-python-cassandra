@@ -218,6 +218,7 @@ class TestErrorRecovery:
 
         cluster = AsyncCluster()
         cluster._cluster = mock_cluster
+        cluster._cluster.protocol_version = 5  # Mock protocol version
         cluster._cluster.connect.return_value = mock_session
 
         session = await cluster.connect()

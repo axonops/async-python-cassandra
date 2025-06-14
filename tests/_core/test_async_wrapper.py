@@ -90,6 +90,7 @@ class TestAsyncCluster:
     async def test_connect(self, mock_cluster_class):
         """Test cluster connection."""
         mock_cluster = mock_cluster_class.return_value
+        mock_cluster.protocol_version = 5  # Mock protocol version
         mock_session = Mock()
         mock_cluster.connect.return_value = mock_session
 
