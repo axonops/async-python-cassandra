@@ -73,8 +73,8 @@ class TestSimplifiedThreading:
         await async_session.close()
         close_duration = time.perf_counter() - start_time
 
-        # Close should be very fast with simplified implementation
-        assert close_duration < 0.1
+        # Close includes a 5-second delay to let driver threads finish
+        assert 5.0 <= close_duration < 6.0
         assert async_session.is_closed
 
         # Subsequent operations should fail immediately (no complex checks)
@@ -227,8 +227,8 @@ class TestSimplifiedThreading:
         await async_session.close()
         close_duration = time.perf_counter() - start_time
 
-        # Close should be fast, not waiting for query
-        assert close_duration < 0.05
+        # Close includes a 5-second delay to let driver threads finish
+        assert 5.0 <= close_duration < 6.0
 
         # Query might fail or succeed - both are acceptable
         try:

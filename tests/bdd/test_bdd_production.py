@@ -77,7 +77,7 @@ def prod_settings(prod_context, event_loop):
     async def _configure():
         cluster = AsyncCluster(
             contact_points=["127.0.0.1"],
-            protocol_version=4,
+            protocol_version=5,
             executor_threads=prod_context["thread_pool_size"],
         )
         session = await cluster.connect()

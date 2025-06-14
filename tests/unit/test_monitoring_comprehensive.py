@@ -96,7 +96,7 @@ class TestClusterMetrics:
         metrics = ClusterMetrics(
             timestamp=now,
             cluster_name="TestCluster",
-            protocol_version=4,
+            protocol_version=5,
             hosts=[host1, host2],
             total_connections=1,
             healthy_hosts=1,
@@ -106,7 +106,7 @@ class TestClusterMetrics:
 
         assert metrics.timestamp == now
         assert metrics.cluster_name == "TestCluster"
-        assert metrics.protocol_version == 4
+        assert metrics.protocol_version == 5
         assert len(metrics.hosts) == 2
         assert metrics.total_connections == 1
         assert metrics.healthy_hosts == 1

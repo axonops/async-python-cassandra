@@ -11,7 +11,7 @@ from cassandra.cluster import Cluster
 from cassandra.policies import ExponentialReconnectionPolicy, TokenAwarePolicy
 
 from async_cassandra.cluster import AsyncCluster
-from async_cassandra.exceptions import ConnectionError
+from async_cassandra.exceptions import ConfigurationError, ConnectionError
 from async_cassandra.retry_policy import AsyncRetryPolicy
 from async_cassandra.session import AsyncCassandraSession
 
@@ -59,7 +59,7 @@ class TestAsyncCluster:
             port=port,
             auth_provider=auth_provider,
             executor_threads=4,
-            protocol_version=4,
+            protocol_version=5,
         )
 
         from async_cassandra.cluster import Cluster as ClusterImport
@@ -70,7 +70,7 @@ class TestAsyncCluster:
         assert call_args.kwargs["port"] == port
         assert call_args.kwargs["auth_provider"] == auth_provider
         assert call_args.kwargs["executor_threads"] == 4
-        assert call_args.kwargs["protocol_version"] == 4
+        assert call_args.kwargs["protocol_version"] == 5
 
     def test_create_with_auth(self, mock_cluster):
         """Test creating cluster with authentication."""
@@ -95,6 +95,9 @@ class TestAsyncCluster:
         """Test connecting without keyspace."""
         async_cluster = AsyncCluster()
 
+        # Mock protocol version as v5 so it passes validation
+        mock_cluster.protocol_version = 5
+
         with patch("async_cassandra.cluster.AsyncCassandraSession.create") as mock_create:
             mock_session = Mock(spec=AsyncCassandraSession)
             mock_create.return_value = mock_session
@@ -109,6 +112,9 @@ class TestAsyncCluster:
         """Test connecting with keyspace."""
         async_cluster = AsyncCluster()
         keyspace = "test_keyspace"
+
+        # Mock protocol version as v5 so it passes validation
+        mock_cluster.protocol_version = 5
 
         with patch("async_cassandra.cluster.AsyncCassandraSession.create") as mock_create:
             mock_session = Mock(spec=AsyncCassandraSession)
@@ -212,3 +218,125 @@ class TestAsyncCluster:
         call_args = ClusterImport.call_args
 
         assert call_args.kwargs["ssl_context"] == ssl_context
+
+    def test_protocol_version_validation_v1(self, mock_cluster):
+        """Test that protocol version 1 is rejected."""
+        with pytest.raises(ConfigurationError) as exc_info:
+            AsyncCluster(protocol_version=1)
+
+        assert "Protocol version 1 is not supported" in str(exc_info.value)
+        assert "requires CQL protocol v5 or higher" in str(exc_info.value)
+        assert "Cassandra 4.0" in str(exc_info.value)
+
+    def test_protocol_version_validation_v2(self, mock_cluster):
+        """Test that protocol version 2 is rejected."""
+        with pytest.raises(ConfigurationError) as exc_info:
+            AsyncCluster(protocol_version=2)
+
+        assert "Protocol version 2 is not supported" in str(exc_info.value)
+        assert "requires CQL protocol v5 or higher" in str(exc_info.value)
+
+    def test_protocol_version_validation_v3(self, mock_cluster):
+        """Test that protocol version 3 is rejected."""
+        with pytest.raises(ConfigurationError) as exc_info:
+            AsyncCluster(protocol_version=3)
+
+        assert "Protocol version 3 is not supported" in str(exc_info.value)
+        assert "requires CQL protocol v5 or higher" in str(exc_info.value)
+
+    def test_protocol_version_validation_v4(self, mock_cluster):
+        """Test that protocol version 4 is rejected."""
+        with pytest.raises(ConfigurationError) as exc_info:
+            AsyncCluster(protocol_version=4)
+
+        assert "Protocol version 4 is not supported" in str(exc_info.value)
+        assert "requires CQL protocol v5 or higher" in str(exc_info.value)
+
+    def test_protocol_version_validation_v5(self, mock_cluster):
+        """Test that protocol version 5 is accepted."""
+        # Should not raise
+        AsyncCluster(protocol_version=5)
+
+        from async_cassandra.cluster import Cluster as ClusterImport
+
+        call_args = ClusterImport.call_args
+        assert call_args.kwargs["protocol_version"] == 5
+
+    def test_protocol_version_validation_v6(self, mock_cluster):
+        """Test that protocol version 6 is accepted."""
+        # Should not raise
+        AsyncCluster(protocol_version=6)
+
+        from async_cassandra.cluster import Cluster as ClusterImport
+
+        call_args = ClusterImport.call_args
+        assert call_args.kwargs["protocol_version"] == 6
+
+    def test_protocol_version_none(self, mock_cluster):
+        """Test that no protocol version allows driver negotiation."""
+        # Should not raise and should not set protocol_version
+        AsyncCluster()
+
+        from async_cassandra.cluster import Cluster as ClusterImport
+
+        call_args = ClusterImport.call_args
+        assert "protocol_version" not in call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_protocol_version_mismatch_error(self, mock_cluster):
+        """Test that protocol version mismatch errors are handled properly."""
+        async_cluster = AsyncCluster()
+
+        # Mock NoHostAvailable with protocol error
+        from cassandra.cluster import NoHostAvailable
+
+        protocol_error = Exception("ProtocolError: Server does not support protocol version 5")
+        no_host_error = NoHostAvailable("Unable to connect", {"host1": protocol_error})
+
+        with patch("async_cassandra.cluster.AsyncCassandraSession.create") as mock_create:
+            mock_create.side_effect = no_host_error
+
+            with pytest.raises(ConnectionError) as exc_info:
+                await async_cluster.connect()
+
+            error_msg = str(exc_info.value)
+            assert "Your Cassandra server doesn't support protocol v5" in error_msg
+            assert "Cassandra 4.0+" in error_msg
+            assert "Please upgrade your Cassandra cluster" in error_msg
+
+    @pytest.mark.asyncio
+    async def test_negotiated_protocol_version_too_low(self, mock_cluster):
+        """Test that negotiated protocol version < 5 is rejected after connection."""
+        async_cluster = AsyncCluster()
+
+        # Mock the cluster to return protocol_version 4 after connection
+        mock_cluster.protocol_version = 4
+
+        mock_session = Mock(spec=AsyncCassandraSession)
+
+        # Track if close was called
+        close_called = False
+
+        async def async_close():
+            nonlocal close_called
+            close_called = True
+
+        mock_session.close = async_close
+
+        with patch("async_cassandra.cluster.AsyncCassandraSession.create") as mock_create:
+            # Make create return a coroutine that returns the session
+            async def create_session(cluster, keyspace):
+                return mock_session
+
+            mock_create.side_effect = create_session
+
+            with pytest.raises(ConnectionError) as exc_info:
+                await async_cluster.connect()
+
+            error_msg = str(exc_info.value)
+            assert "Connected with protocol v4 but v5+ is required" in error_msg
+            assert "Your Cassandra server only supports up to protocol v4" in error_msg
+            assert "Cassandra 4.0+" in error_msg
+
+            # Verify session was closed
+            assert close_called, "Session close() should have been called"

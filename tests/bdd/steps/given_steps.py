@@ -1,5 +1,9 @@
 """Given step definitions for BDD tests."""
 
+import asyncio
+import subprocess
+import time
+
 from pytest_bdd import given, parsers
 
 from async_cassandra import AsyncCassandraSession as AsyncSession
@@ -227,3 +231,75 @@ def monitoring_enabled():
     from async_cassandra.monitoring import MetricsCollector
 
     return MetricsCollector()
+
+
+@given(parsers.parse("a Cassandra {version} cluster is running on port {port:d}"))
+def cassandra_version_cluster_running(version, port, context):
+    """Start a specific version of Cassandra on a given port."""
+    # Check if docker or podman is available
+    docker_cmd = None
+    try:
+        subprocess.run(["docker", "--version"], capture_output=True, check=True)
+        docker_cmd = "docker"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        try:
+            subprocess.run(["podman", "--version"], capture_output=True, check=True)
+            docker_cmd = "podman"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise RuntimeError("Neither docker nor podman is available")
+    
+    # Map version to specific Cassandra image
+    version_map = {
+        "3.11": "cassandra:3.11",
+        "5.0": "cassandra:5.0"
+    }
+    
+    image = version_map.get(version)
+    if not image:
+        raise ValueError(f"Unsupported Cassandra version: {version}")
+    
+    container_name = f"cassandra-{version.replace('.', '')}-test-{port}"
+    
+    # Stop any existing container with this name
+    subprocess.run([docker_cmd, "stop", container_name], capture_output=True)
+    subprocess.run([docker_cmd, "rm", container_name], capture_output=True)
+    
+    # Start the container
+    cmd = [
+        docker_cmd, "run", "-d",
+        "--name", container_name,
+        "-p", f"{port}:9042",
+        "-e", "CASSANDRA_CLUSTER_NAME=TestCluster",
+        "-e", "CASSANDRA_DC=dc1",
+        "-e", "CASSANDRA_ENDPOINT_SNITCH=SimpleSnitch",
+        image
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to start Cassandra {version}: {result.stderr}")
+    
+    # Store container info in context for cleanup
+    if not hasattr(context, "containers"):
+        context.containers = []
+    context.containers.append((docker_cmd, container_name))
+    
+    # Wait for Cassandra to be ready
+    max_attempts = 60  # 60 seconds timeout
+    for attempt in range(max_attempts):
+        try:
+            # Try to connect using cqlsh to check if Cassandra is ready
+            check_cmd = [
+                docker_cmd, "exec", container_name,
+                "cqlsh", "-e", "DESCRIBE CLUSTER"
+            ]
+            result = subprocess.run(check_cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    else:
+        raise RuntimeError(f"Cassandra {version} failed to start within 60 seconds")
+    
+    return {"version": version, "port": port, "container": container_name}
