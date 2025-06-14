@@ -10,8 +10,6 @@ import gc
 import weakref
 from unittest.mock import MagicMock
 
-import pytest
-
 from async_cassandra.streaming import AsyncStreamingResultSet
 
 
@@ -104,17 +102,17 @@ class TestStreamingMemoryManagement:
 
             # Mock response future with proper callback tracking
             stored_callbacks = []
-            
+
             mock_future = MagicMock()
             mock_future.has_more_pages = False
             mock_future._final_exception = None
-            
+
             def mock_add_callbacks(callback=None, errback=None):
                 stored_callbacks.append((callback, errback))
-            
+
             def mock_clear_callbacks():
                 stored_callbacks.clear()
-            
+
             mock_future.add_callbacks = mock_add_callbacks
             mock_future.clear_callbacks = mock_clear_callbacks
 
@@ -131,7 +129,7 @@ class TestStreamingMemoryManagement:
 
             # Store reference to check cleanup
             handler_ref = weakref.ref(handler)
-            
+
             # Properly close the handler to break circular references
             await handler.close()
 
@@ -140,7 +138,9 @@ class TestStreamingMemoryManagement:
             gc.collect()
 
             # Check that handler was garbage collected
-            assert handler_ref() is None, "Handler not garbage collected - circular reference exists"
+            assert (
+                handler_ref() is None
+            ), "Handler not garbage collected - circular reference exists"
 
         asyncio.run(run_test())
 

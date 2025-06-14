@@ -30,7 +30,7 @@ def test_state():
         "streaming_result": None,
         "sessions": [],
         "results": [],
-        "thread_results": []
+        "thread_results": [],
     }
 
 
@@ -38,15 +38,16 @@ def test_state():
 @given("a running Cassandra cluster")
 def cassandra_is_running(cassandra_cluster):
     """Cassandra cluster is provided by the fixture."""
-    assert cassandra_cluster.contact_point is not None
+    # Just verify we have a cluster object
+    assert cassandra_cluster is not None
 
 
-@given("a test keyspace \"test_context_safety\"")
+@given('a test keyspace "test_context_safety"')
 async def create_test_keyspace(cassandra_cluster, test_state):
     """Create test keyspace."""
-    cluster = AsyncCluster([cassandra_cluster.contact_point])
+    cluster = AsyncCluster(["localhost"])
     session = await cluster.connect()
-    
+
     await session.execute(
         """
         CREATE KEYSPACE IF NOT EXISTS test_context_safety
@@ -56,7 +57,7 @@ async def create_test_keyspace(cassandra_cluster, test_state):
         }
         """
     )
-    
+
     test_state["cluster"] = cluster
     test_state["session"] = session
 
@@ -66,7 +67,7 @@ async def create_test_keyspace(cassandra_cluster, test_state):
 async def open_session(test_state):
     """Ensure session is connected to test keyspace."""
     await test_state["session"].set_keyspace("test_context_safety")
-    
+
     # Create a test table
     await test_state["session"].execute(
         """
@@ -99,13 +100,11 @@ async def can_execute_queries(test_state):
     """Execute a successful query."""
     test_id = uuid.uuid4()
     await test_state["session"].execute(
-        "INSERT INTO test_table (id, value) VALUES (%s, %s)",
-        [test_id, "test_value"]
+        "INSERT INTO test_table (id, value) VALUES (%s, %s)", [test_id, "test_value"]
     )
-    
+
     result = await test_state["session"].execute(
-        "SELECT * FROM test_table WHERE id = %s",
-        [test_id]
+        "SELECT * FROM test_table WHERE id = %s", [test_id]
     )
     assert result.one().value == "test_value"
 
@@ -115,7 +114,7 @@ async def can_execute_queries(test_state):
 async def session_with_data(test_state):
     """Create session with test data."""
     await test_state["session"].set_keyspace("test_context_safety")
-    
+
     await test_state["session"].execute(
         """
         CREATE TABLE IF NOT EXISTS stream_test (
@@ -124,12 +123,11 @@ async def session_with_data(test_state):
         )
         """
     )
-    
+
     # Insert test data
     for i in range(10):
         await test_state["session"].execute(
-            "INSERT INTO stream_test (id, value) VALUES (%s, %s)",
-            [uuid.uuid4(), i]
+            "INSERT INTO stream_test (id, value) VALUES (%s, %s)", [uuid.uuid4(), i]
         )
 
 
@@ -163,12 +161,10 @@ async def session_still_open(test_state):
 async def can_stream_again(test_state):
     """Start a new streaming operation."""
     count = 0
-    async with await test_state["session"].execute_stream(
-        "SELECT * FROM stream_test"
-    ) as stream:
+    async with await test_state["session"].execute_stream("SELECT * FROM stream_test") as stream:
         async for row in stream:
             count += 1
-    
+
     assert count == 10  # Should get all 10 rows
 
 
@@ -219,7 +215,7 @@ async def can_create_sessions(test_state):
 async def create_multiple_sessions(test_state):
     """Create multiple sessions."""
     await test_state["session"].set_keyspace("test_context_safety")
-    
+
     # Create test table
     await test_state["session"].execute(
         """
@@ -231,15 +227,15 @@ async def create_multiple_sessions(test_state):
         )
         """
     )
-    
+
     # Insert data for different partitions
     for partition in range(3):
         for i in range(20):
             await test_state["session"].execute(
                 "INSERT INTO concurrent_test (partition_id, id, value) VALUES (%s, %s, %s)",
-                [partition, uuid.uuid4(), f"value_{partition}_{i}"]
+                [partition, uuid.uuid4(), f"value_{partition}_{i}"],
             )
-    
+
     # Create multiple sessions
     for _ in range(3):
         session = await test_state["cluster"].connect("test_context_safety")
@@ -249,26 +245,27 @@ async def create_multiple_sessions(test_state):
 @when("I stream data concurrently from each session")
 async def concurrent_streaming(test_state):
     """Stream from each session concurrently."""
+
     async def stream_partition(session, partition_id):
         count = 0
         config = StreamConfig(fetch_size=5)
-        
+
         async with await session.execute_stream(
             "SELECT * FROM concurrent_test WHERE partition_id = %s",
             [partition_id],
-            stream_config=config
+            stream_config=config,
         ) as stream:
             async for row in stream:
                 count += 1
-        
+
         return count
-    
+
     # Stream concurrently
     tasks = []
     for i, session in enumerate(test_state["sessions"]):
         task = stream_partition(session, i)
         tasks.append(task)
-    
+
     test_state["results"] = await asyncio.gather(*tasks)
 
 
@@ -299,7 +296,7 @@ async def all_sessions_usable(test_state):
 async def session_for_threads(test_state):
     """Set up session for thread testing."""
     await test_state["session"].set_keyspace("test_context_safety")
-    
+
     await test_state["session"].execute(
         """
         CREATE TABLE IF NOT EXISTS thread_test (
@@ -308,7 +305,7 @@ async def session_for_threads(test_state):
         )
         """
     )
-    
+
     await test_state["session"].execute(
         "INSERT INTO thread_test (id, counter) VALUES ('shared', 0)"
     )
@@ -317,44 +314,42 @@ async def session_for_threads(test_state):
 @when("one thread exits a streaming context manager")
 async def thread_exits_context(test_state):
     """Use streaming in main thread while other threads work."""
+
     def worker_thread(session, thread_id):
         """Worker thread function."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         async def do_work():
             # Read current value
-            result = await session.execute(
-                "SELECT counter FROM thread_test WHERE id = 'shared'"
-            )
+            result = await session.execute("SELECT counter FROM thread_test WHERE id = 'shared'")
             current = result.one().counter
-            
+
             # Update
             await session.execute(
-                "UPDATE thread_test SET counter = %s WHERE id = 'shared'",
-                [current + 1]
+                "UPDATE thread_test SET counter = %s WHERE id = 'shared'", [current + 1]
             )
-            
+
             return f"Thread {thread_id} completed"
-        
+
         result = loop.run_until_complete(do_work())
         loop.close()
         return result
-    
+
     # Start threads
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = []
         for i in range(2):
             future = executor.submit(worker_thread, test_state["session"], i)
             futures.append(future)
-        
+
         # Use streaming in main thread
         async with await test_state["session"].execute_stream(
             "SELECT * FROM thread_test"
         ) as stream:
             async for row in stream:
                 await asyncio.sleep(0.1)  # Give threads time to work
-        
+
         # Collect thread results
         for future in futures:
             result = future.result(timeout=5.0)
@@ -383,20 +378,20 @@ async def verify_thread_operations(test_state):
 async def cleanup(test_state):
     """Clean up after each test."""
     yield
-    
+
     # Close all sessions
     for session in test_state.get("sessions", []):
         if session and not session.is_closed:
             await session.close()
-    
+
     # Clean up main session and cluster
     if test_state.get("session"):
         try:
             await test_state["session"].execute("DROP KEYSPACE IF EXISTS test_context_safety")
-        except:
+        except Exception:
             pass
         if not test_state["session"].is_closed:
             await test_state["session"].close()
-    
+
     if test_state.get("cluster") and not test_state["cluster"].is_closed:
         await test_state["cluster"].shutdown()

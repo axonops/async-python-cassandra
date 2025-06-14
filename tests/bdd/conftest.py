@@ -10,6 +10,7 @@ from tests.bdd.steps.common_steps import *  # noqa: E402, F403
 from tests.bdd.steps.given_steps import *  # noqa: E402, F403
 from tests.bdd.steps.then_steps import *  # noqa: E402, F403
 from tests.bdd.steps.when_steps import *  # noqa: E402, F403
+from tests._fixtures.cassandra import cassandra_container  # noqa: F401
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -50,6 +51,16 @@ def cassandra_cluster_running(cassandra_container):
     """Ensure Cassandra container is running."""
     assert cassandra_container.is_running()
     return cassandra_container
+
+
+@pytest.fixture
+async def cassandra_cluster(cassandra_container):
+    """Provide an async Cassandra cluster for BDD tests."""
+    from async_cassandra import AsyncCluster
+    
+    cluster = AsyncCluster(["localhost"])
+    yield cluster
+    await cluster.shutdown()
 
 
 @pytest.fixture

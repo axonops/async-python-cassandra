@@ -9,9 +9,7 @@ These tests are designed to fail until the framework issues are fixed:
 """
 
 import asyncio
-import gc
 import threading
-import weakref
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,7 +17,6 @@ import pytest_asyncio
 
 from async_cassandra import AsyncCluster, StreamConfig
 from async_cassandra.result import AsyncResultHandler
-from async_cassandra.streaming import AsyncStreamingResultSet
 
 
 @pytest.mark.integration
@@ -190,9 +187,9 @@ class TestMemoryLeakIssues:
         """Create async session for testing."""
         cluster = AsyncCluster(["127.0.0.1"])
         session = await cluster.connect()
-        
+
         yield session
-        
+
         await session.close()
         await cluster.shutdown()
 
@@ -211,7 +208,7 @@ class TestMemoryLeakIssues:
             """
         )
         await async_session.set_keyspace("test_streaming")
-        
+
         await async_session.execute("DROP TABLE IF EXISTS large_table")
         await async_session.execute(
             """
@@ -223,41 +220,40 @@ class TestMemoryLeakIssues:
             )
             """
         )
-        
+
         # Insert 1000 rows across 10 partitions
         for partition in range(10):
             for i in range(100):
                 await async_session.execute(
                     "INSERT INTO large_table (partition_id, id, data) VALUES (%s, %s, %s)",
-                    (partition, i, "x" * 1000)  # 1KB per row
+                    (partition, i, "x" * 1000),  # 1KB per row
                 )
-        
+
         # Stream through the data with small page size
         stream_config = StreamConfig(fetch_size=100)
         result = await async_session.execute_stream(
-            "SELECT * FROM large_table",
-            stream_config=stream_config
+            "SELECT * FROM large_table", stream_config=stream_config
         )
-        
+
         rows_processed = 0
         pages_seen = 0
-        last_page_size = 0
-        
+
         # Track that we're processing pages, not accumulating all data
         async for page in result.pages():
             pages_seen += 1
             rows_in_page = len(page)
             rows_processed += rows_in_page
-            
+
             # Verify we're getting reasonable page sizes
             assert rows_in_page <= 100, f"Page too large: {rows_in_page}"
-            
+
             # Process the page (simulating work)
             for row in page:
                 assert row.data == "x" * 1000
-            
-            last_page_size = rows_in_page
-        
+
+            # Track last page size if needed for debugging
+            pass
+
         # Verify we processed all data
         assert rows_processed == 1000
         assert pages_seen >= 10  # Should have multiple pages
@@ -277,7 +273,7 @@ class TestMemoryLeakIssues:
             """
         )
         await async_session.set_keyspace("test_context")
-        
+
         await async_session.execute("DROP TABLE IF EXISTS test_cleanup")
         await async_session.execute(
             """
@@ -287,14 +283,13 @@ class TestMemoryLeakIssues:
             )
             """
         )
-        
+
         # Insert test data
         for i in range(100):
             await async_session.execute(
-                "INSERT INTO test_cleanup (id, data) VALUES (%s, %s)",
-                (i, "test data")
+                "INSERT INTO test_cleanup (id, data) VALUES (%s, %s)", (i, "test data")
             )
-        
+
         # Test normal exit
         rows_processed = 0
         async with await async_session.execute_stream("SELECT * FROM test_cleanup") as result:
@@ -302,9 +297,9 @@ class TestMemoryLeakIssues:
                 rows_processed += 1
                 if rows_processed >= 10:
                     break  # Early exit
-        
+
         assert rows_processed == 10
-        
+
         # Test exception exit
         rows_before_error = 0
         try:
@@ -315,7 +310,7 @@ class TestMemoryLeakIssues:
                         raise ValueError("Test error")
         except ValueError:
             pass  # Expected
-        
+
         assert rows_before_error == 5
 
     @pytest.mark.asyncio
@@ -333,7 +328,7 @@ class TestMemoryLeakIssues:
             """
         )
         await async_session.set_keyspace("test_error_stream")
-        
+
         await async_session.execute("DROP TABLE IF EXISTS disappearing_table")
         await async_session.execute(
             """
@@ -343,43 +338,42 @@ class TestMemoryLeakIssues:
             )
             """
         )
-        
+
         # Insert enough data to ensure multiple pages
         for i in range(1000):
             await async_session.execute(
-                "INSERT INTO disappearing_table (id, data) VALUES (%s, %s)",
-                (i, "x" * 100)
+                "INSERT INTO disappearing_table (id, data) VALUES (%s, %s)", (i, "x" * 100)
             )
-        
+
         # Start streaming with small page size
         stream_config = StreamConfig(fetch_size=50)
         result = await async_session.execute_stream(
-            "SELECT * FROM disappearing_table",
-            stream_config=stream_config
+            "SELECT * FROM disappearing_table", stream_config=stream_config
         )
-        
+
         rows_processed = 0
         error_caught = False
-        
+
         try:
             async for row in result:
                 rows_processed += 1
-                
+
                 # Drop table after processing some rows to trigger error
                 if rows_processed == 100:
                     # Use a different session to drop the table
                     from async_cassandra import AsyncCluster
+
                     temp_cluster = AsyncCluster(contact_points=["localhost"])
                     temp_session = await temp_cluster.connect()
                     await temp_session.execute("DROP TABLE test_error_stream.disappearing_table")
                     await temp_session.close()
                     await temp_cluster.shutdown()
-                    
+
         except Exception as e:
             error_caught = True
             # Should get an error about table not existing
             assert "disappearing_table" in str(e) or "unconfigured table" in str(e)
-        
+
         assert error_caught, "Expected error when table was dropped"
         assert rows_processed >= 100, "Should have processed some rows before error"
 

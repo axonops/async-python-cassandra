@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test test-quick test-core test-critical test-progressive test-all test-unit test-integration test-integration-keep test-stress test-bdd lint format type-check build clean container-start container-stop container-status
+.PHONY: help install install-dev test test-quick test-core test-critical test-progressive test-all test-unit test-integration test-integration-keep test-stress test-bdd lint format type-check build clean container-start container-stop container-status container-clean container-list
 
 help:
 	@echo "Available commands:"
@@ -32,6 +32,8 @@ help:
 	@echo "  container-start Start Cassandra container manually"
 	@echo "  container-stop  Stop Cassandra container"
 	@echo "  container-status Check if Cassandra container is running"
+	@echo "  container-list  List all test containers"
+	@echo "  container-clean Kill all test containers"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  lint           Run linters"
@@ -101,7 +103,7 @@ test-performance:
 	pytest tests/performance -v
 
 # BDD tests
-test-bdd:
+test-bdd: container-clean
 	@echo "Running BDD tests..."
 	pytest tests/bdd -v --cucumber-json=reports/bdd.json
 
@@ -112,7 +114,7 @@ test:
 test-unit:
 	pytest tests/unit/ tests/_core/ tests/_resilience/ tests/_features/ -v --cov=async_cassandra --cov-report=html
 
-test-integration:
+test-integration: container-clean
 	@echo "Running integration tests with automatic container management..."
 	pytest tests/integration/ -v -m integration
 	@echo "Integration tests completed."
@@ -163,6 +165,13 @@ container-stop:
 
 container-status:
 	@cd tests/integration && python container_manager.py status
+
+container-list:
+	@./scripts/manage_test_containers.sh list
+
+container-clean:
+	@echo "Cleaning up test containers..."
+	@./scripts/manage_test_containers.sh kill
 
 # Cleanup
 clean:
