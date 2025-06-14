@@ -251,9 +251,67 @@ sequenceDiagram
     Stream-->>App: First row of page 2
 ```
 
+## ⚠️ CRITICAL: Resource Cleanup
+
+**IMPORTANT**: Streaming result sets MUST be properly closed to prevent memory leaks. The streaming implementation uses callbacks that create circular references between the result set and the response future. Failing to close the result properly will cause memory leaks.
+
+### Preferred Approach: Context Manager (Recommended)
+
+The context manager pattern is the **preferred and safest approach** as it guarantees cleanup even if exceptions occur:
+
+```python
+# ✅ BEST PRACTICE: Using context manager (ALWAYS RECOMMENDED)
+async with await session.execute_stream(query) as result:
+    async for row in result:
+        await process_row(row)
+# Automatically closed when exiting the context, even on exceptions!
+```
+
+### Alternative: Manual Close with try/finally
+
+If you cannot use a context manager for some reason, you MUST ensure cleanup with try/finally:
+
+```python
+# ✅ ALTERNATIVE: Manual close with try/finally
+result = await session.execute_stream(query)
+try:
+    async for row in result:
+        await process_row(row)
+        if some_condition:
+            break  # Even with early exit, finally ensures cleanup
+finally:
+    await result.close()  # CRITICAL: Always close in finally block!
+```
+
+### What NOT to Do
+
+```python
+# ❌ WRONG: No cleanup - MEMORY LEAK!
+result = await session.execute_stream(query)
+async for row in result:
+    process_row(row)
+# Result not closed - callbacks remain in memory forever!
+
+# ❌ WRONG: Close without try/finally - risky!
+result = await session.execute_stream(query)
+async for row in result:
+    process_row(row)  # If this throws, close() is never called!
+await result.close()  # Won't run if exception occurs above
+```
+
+### Why This Happens
+
+The streaming implementation registers callbacks with the Cassandra driver's response future. These callbacks hold references to the result set, creating a circular reference:
+
+```
+AsyncStreamingResultSet ←→ Callbacks ←→ ResponseFuture
+```
+
+Without explicit cleanup, Python's garbage collector cannot break this cycle, causing both the result set and any data it holds to remain in memory indefinitely.
+
 ## Basic Usage
 
-### Simple Row-by-Row Processing
+### Simple Row-by-Row Processing (WITH PROPER CLEANUP)
 
 ```python
 from async_cassandra import AsyncCluster
@@ -268,24 +326,25 @@ async def process_large_table():
         fetch_size=1000  # Same as statement.fetch_size - sets page size to 1000 rows
     )
     
-    # Start streaming query
-    result = await session.execute_stream(
+    # Start streaming query - ALWAYS USE CONTEXT MANAGER
+    async with await session.execute_stream(
         "SELECT user_id, email, created_at FROM users",
         stream_config=config
-    )
-    
-    # Process rows one at a time
-    rows_processed = 0
-    async for row in result:
-        # At this point, only one page (1000 rows) is in memory
-        # When we finish a page, the next one is fetched automatically
-        await send_email(row.email)
-        rows_processed += 1
+    ) as result:
+        # Process rows one at a time
+        rows_processed = 0
+        async for row in result:
+            # At this point, only one page (1000 rows) is in memory
+            # When we finish a page, the next one is fetched automatically
+            await send_email(row.email)
+            rows_processed += 1
+            
+            if rows_processed % 1000 == 0:
+                print(f"Processed {rows_processed} users...")
         
-        if rows_processed % 1000 == 0:
-            print(f"Processed {rows_processed} users...")
+        print(f"Done! Processed {rows_processed} total users")
+    # Result automatically closed here
     
-    print(f"Done! Processed {rows_processed} total users")
     await cluster.shutdown()
 ```
 
@@ -351,21 +410,22 @@ Sometimes you want to process entire pages at once (e.g., bulk operations):
 async def bulk_process_users():
     config = StreamConfig(fetch_size=1000)
     
-    result = await session.execute_stream(
+    # ALWAYS use context manager for streaming
+    async with await session.execute_stream(
         "SELECT * FROM users WHERE active = true",
         stream_config=config
-    )
-    
-    # Process entire pages instead of individual rows
-    async for page in result.pages():
-        # 'page' is a list of up to 1000 rows
-        print(f"Processing page {result.page_number} with {len(page)} rows")
-        
-        # Bulk operation on entire page
-        user_ids = [row.user_id for row in page]
-        await bulk_update_last_seen(user_ids)
-        
-        # The page is garbage collected after this iteration
+    ) as result:
+        # Process entire pages instead of individual rows
+        async for page in result.pages():
+            # 'page' is a list of up to 1000 rows
+            print(f"Processing page {result.page_number} with {len(page)} rows")
+            
+            # Bulk operation on entire page
+            user_ids = [row.user_id for row in page]
+            await bulk_update_last_seen(user_ids)
+            
+            # The page is garbage collected after this iteration
+    # Result automatically closed here
 ```
 
 ### Page Processing Flow:
@@ -412,14 +472,13 @@ async def export_with_progress():
         page_callback=progress_callback
     )
     
-    result = await session.execute_stream(
+    async with await session.execute_stream(
         "SELECT * FROM events WHERE year = 2024",
         stream_config=config
-    )
-    
-    async for row in result:
-        await process_event(row)
-        rows_processed += 1
+    ) as result:
+        async for row in result:
+            await process_event(row)
+            rows_processed += 1
 ```
 
 ### Pattern 2: Memory-Efficient Data Export
@@ -432,37 +491,38 @@ async def export_to_parquet(table_name: str, output_file: str):
     
     config = StreamConfig(fetch_size=10000)
     
-    result = await session.execute_stream(
-        f"SELECT * FROM {table_name}",
-        stream_config=config
-    )
-    
     schema = None
     writer = None
     
     try:
-        # Process page by page for efficient memory use
-        async for page in result.pages():
-            # Convert page to PyArrow table
-            if schema is None:
-                # Define schema from first page
-                schema = pa.schema([
-                    (field, pa.string()) for field in page[0]._fields
-                ])
-                writer = pq.ParquetWriter(output_file, schema)
-            
-            # Convert page to columnar format
-            data = {
-                field: [getattr(row, field) for row in page]
-                for field in page[0]._fields
-            }
-            
-            # Write batch to Parquet
-            batch = pa.record_batch(data, schema=schema)
-            writer.write_batch(batch)
-            
-            print(f"Exported page {result.page_number} "
-                  f"({result.total_rows_fetched:,} rows total)")
+        # ALWAYS use context manager for streaming
+        async with await session.execute_stream(
+            f"SELECT * FROM {table_name}",
+            stream_config=config
+        ) as result:
+            # Process page by page for efficient memory use
+            async for page in result.pages():
+                # Convert page to PyArrow table
+                if schema is None:
+                    # Define schema from first page
+                    schema = pa.schema([
+                        (field, pa.string()) for field in page[0]._fields
+                    ])
+                    writer = pq.ParquetWriter(output_file, schema)
+                
+                # Convert page to columnar format
+                data = {
+                    field: [getattr(row, field) for row in page]
+                    for field in page[0]._fields
+                }
+                
+                # Write batch to Parquet
+                batch = pa.record_batch(data, schema=schema)
+                writer.write_batch(batch)
+                
+                print(f"Exported page {result.page_number} "
+                      f"({result.total_rows_fetched:,} rows total)")
+        # Result automatically closed here
     
     finally:
         if writer:
@@ -489,18 +549,17 @@ async def parallel_partition_processing():
             "SELECT * FROM events WHERE partition_date = ?"
         )
         
-        result = await session.execute_stream(
+        async with await session.execute_stream(
             stmt,
             parameters=[partition],
             stream_config=config
-        )
-        
-        count = 0
-        async for row in result:
-            await process_event(row)
-            count += 1
-        
-        return partition, count
+        ) as result:
+            count = 0
+            async for row in result:
+                await process_event(row)
+                count += 1
+            
+            return partition, count
     
     # Process up to 3 partitions concurrently
     # Each partition streams independently
@@ -565,23 +624,42 @@ print(f"Large rows: {large_rows}")
 
 ## Common Pitfalls
 
-### ❌ Pitfall 1: Collecting All Rows Defeats Streaming
+### ❌ Pitfall 1: Not Using Context Manager - MEMORY LEAK!
+
+```python
+# ❌ WRONG - Memory leak!
+result = await session.execute_stream("SELECT * FROM huge_table")
+async for row in result:
+    process_row(row)
+# Callbacks not cleaned up - circular reference remains!
+
+# ✅ CORRECT - Always use context manager
+async with await session.execute_stream("SELECT * FROM huge_table") as result:
+    async for row in result:
+        process_row(row)
+# Automatically cleaned up
+```
+
+### ❌ Pitfall 2: Collecting All Rows Defeats Streaming
 
 ```python
 # DON'T DO THIS - defeats the purpose of streaming!
-result = await session.execute_stream(
+async with await session.execute_stream(
     "SELECT * FROM huge_table",
     stream_config=StreamConfig(fetch_size=1000)
-)
-
-# This loads everything into memory!
-all_rows = []
-async for row in result:
-    all_rows.append(row)  # ❌ Accumulating in memory
+) as result:
+    # This loads everything into memory!
+    all_rows = []
+    async for row in result:
+        all_rows.append(row)  # ❌ Accumulating in memory
 
 # DO THIS INSTEAD
-async for row in result:
-    await process_row(row)  # ✅ Process and discard
+async with await session.execute_stream(
+    "SELECT * FROM huge_table",
+    stream_config=StreamConfig(fetch_size=1000)
+) as result:
+    async for row in result:
+        await process_row(row)  # ✅ Process and discard
 ```
 
 ### ❌ Pitfall 2: Using LIMIT with Streaming
@@ -611,16 +689,15 @@ async def reliable_stream_processing():
                 query += f" WHERE id > '{last_processed_id}'"
             query += " ALLOW FILTERING"  # Be careful with this!
             
-            result = await session.execute_stream(
+            async with await session.execute_stream(
                 query,
                 stream_config=StreamConfig(fetch_size=5000)
-            )
-            
-            async for row in result:
-                await process_event(row)
-                last_processed_id = row.id
+            ) as result:
+                async for row in result:
+                    await process_event(row)
+                    last_processed_id = row.id
                 
-            break  # Success, exit loop
+                break  # Success, exit loop
             
         except Exception as e:
             print(f"Stream failed after {last_processed_id}, retrying: {e}")
@@ -704,39 +781,40 @@ async def etl_pipeline(
         )
     )
     
-    result = await session.execute_stream(
+    # Stream from source - ALWAYS use context manager
+    async with await session.execute_stream(
         f"SELECT * FROM {source_table}",
         stream_config=config
-    )
-    
-    # Process in batches for efficiency
-    batch = []
-    
-    async for row in result:
-        try:
-            # Transform
-            transformed = await transform_func(row)
-            
-            # Add to batch
-            batch.append((
-                transformed['id'],
-                transformed['data'],
-                datetime.now()
-            ))
-            
-            # Load batch when full
-            if len(batch) >= batch_size:
-                await load_batch(insert_stmt, batch)
-                total_processed += len(batch)
-                batch = []
+    ) as result:
+        # Process in batches for efficiency
+        batch = []
+        
+        async for row in result:
+            try:
+                # Transform
+                transformed = await transform_func(row)
                 
-        except Exception as e:
-            failed_rows.append((row.id, str(e)))
-    
-    # Load final partial batch
-    if batch:
-        await load_batch(insert_stmt, batch)
-        total_processed += len(batch)
+                # Add to batch
+                batch.append((
+                    transformed['id'],
+                    transformed['data'],
+                    datetime.now()
+                ))
+                
+                # Load batch when full
+                if len(batch) >= batch_size:
+                    await load_batch(insert_stmt, batch)
+                    total_processed += len(batch)
+                    batch = []
+                    
+            except Exception as e:
+                failed_rows.append((row.id, str(e)))
+        
+        # Load final partial batch
+        if batch:
+            await load_batch(insert_stmt, batch)
+            total_processed += len(batch)
+    # Result automatically closed here
     
     # Report results
     duration = (datetime.now() - start_time).total_seconds()

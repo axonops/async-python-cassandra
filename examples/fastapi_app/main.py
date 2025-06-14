@@ -49,12 +49,19 @@ async def lifespan(app: FastAPI):
     """Manage database lifecycle."""
     global session
 
-    # Startup - connect to Cassandra
-    cluster = AsyncCluster(
-        contact_points=os.getenv("CASSANDRA_HOSTS", "localhost").split(","),
-        port=int(os.getenv("CASSANDRA_PORT", "9042")),
-    )
-    session = await cluster.connect()
+    try:
+        # Startup - connect to Cassandra
+        cluster = AsyncCluster(
+            contact_points=os.getenv("CASSANDRA_HOSTS", "localhost").split(","),
+            port=int(os.getenv("CASSANDRA_PORT", "9042")),
+        )
+        session = await cluster.connect()
+    except Exception as e:
+        print(f"Failed to connect to Cassandra: {type(e).__name__}: {e}")
+        # Don't fail startup completely, allow health check to report unhealthy
+        session = None
+        yield
+        return
 
     # Create keyspace and table
     await session.execute(
@@ -192,26 +199,36 @@ async def stream_users(
 
         stream_config = StreamConfig(fetch_size=fetch_size)
 
-        result = await session.execute_stream(
+        # Use context manager for proper resource cleanup
+        async with await session.execute_stream(
             f"SELECT * FROM users LIMIT {limit}", stream_config=stream_config
-        )
-
-        users = []
-        async for row in result:
-            # Handle both dict-like and object-like row access
-            if hasattr(row, '__getitem__'):
-                # Dictionary-like access
-                try:
-                    user_dict = {
-                        "id": str(row["id"]),
-                        "name": row["name"],
-                        "email": row["email"],
-                        "age": row["age"],
-                        "created_at": row["created_at"].isoformat(),
-                        "updated_at": row["updated_at"].isoformat(),
-                    }
-                except (KeyError, TypeError):
-                    # Fall back to attribute access
+        ) as result:
+            users = []
+            async for row in result:
+                # Handle both dict-like and object-like row access
+                if hasattr(row, '__getitem__'):
+                    # Dictionary-like access
+                    try:
+                        user_dict = {
+                            "id": str(row["id"]),
+                            "name": row["name"],
+                            "email": row["email"],
+                            "age": row["age"],
+                            "created_at": row["created_at"].isoformat(),
+                            "updated_at": row["updated_at"].isoformat(),
+                        }
+                    except (KeyError, TypeError):
+                        # Fall back to attribute access
+                        user_dict = {
+                            "id": str(row.id),
+                            "name": row.name,
+                            "email": row.email,
+                            "age": row.age,
+                            "created_at": row.created_at.isoformat(),
+                            "updated_at": row.updated_at.isoformat(),
+                        }
+                else:
+                    # Object-like access
                     user_dict = {
                         "id": str(row.id),
                         "name": row.name,
@@ -220,27 +237,17 @@ async def stream_users(
                         "created_at": row.created_at.isoformat(),
                         "updated_at": row.updated_at.isoformat(),
                     }
-            else:
-                # Object-like access
-                user_dict = {
-                    "id": str(row.id),
-                    "name": row.name,
-                    "email": row.email,
-                    "age": row.age,
-                    "created_at": row.created_at.isoformat(),
-                    "updated_at": row.updated_at.isoformat(),
-                }
-            users.append(user_dict)
+                users.append(user_dict)
 
-        return {
-            "users": users,
-            "metadata": {
-                "total_returned": len(users),
-                "pages_fetched": result.page_number,
-                "fetch_size": fetch_size,
-                "streaming_enabled": True,
-            },
-        }
+            return {
+                "users": users,
+                "metadata": {
+                    "total_returned": len(users),
+                    "pages_fetched": result.page_number,
+                    "fetch_size": fetch_size,
+                    "streaming_enabled": True,
+                },
+            }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stream users: {str(e)}")
@@ -268,14 +275,14 @@ async def stream_users_by_pages(
 
         stream_config = StreamConfig(fetch_size=fetch_size, max_pages=max_pages)
 
-        result = await session.execute_stream(
+        # Use context manager for automatic cleanup
+        async with await session.execute_stream(
             f"SELECT * FROM users LIMIT {limit}", stream_config=stream_config
-        )
+        ) as result:
+            pages_info = []
+            total_processed = 0
 
-        pages_info = []
-        total_processed = 0
-
-        async for page in result.pages():
+            async for page in result.pages():
             page_size = len(page)
             total_processed += page_size
 
@@ -306,23 +313,23 @@ async def stream_users_by_pages(
                         "email": first_row.email
                     }
             
-            pages_info.append(
-                {
-                    "page_number": len(pages_info) + 1,
-                    "rows_in_page": page_size,
-                    "sample_user": sample_user,
-                }
-            )
+                pages_info.append(
+                    {
+                        "page_number": len(pages_info) + 1,
+                        "rows_in_page": page_size,
+                        "sample_user": sample_user,
+                    }
+                )
 
-        return {
-            "total_rows_processed": total_processed,
-            "pages_info": pages_info,
-            "metadata": {
-                "fetch_size": fetch_size,
-                "max_pages_limit": max_pages,
-                "streaming_mode": "page_by_page",
-            },
-        }
+            return {
+                "total_rows_processed": total_processed,
+                "pages_info": pages_info,
+                "metadata": {
+                    "fetch_size": fetch_size,
+                    "max_pages_limit": max_pages,
+                    "streaming_mode": "page_by_page",
+                },
+            }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stream users by pages: {str(e)}")

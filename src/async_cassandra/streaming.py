@@ -73,10 +73,20 @@ class AsyncStreamingResultSet:
         except Exception:
             # Ignore errors during cleanup
             pass
+    
+    def __del__(self) -> None:
+        """Ensure callbacks are cleaned up when object is garbage collected."""
+        # Clean up callbacks to break circular references
+        self._cleanup_callbacks()
 
     def _setup_callbacks(self) -> None:
         """Set up callbacks for the current page."""
         self.response_future.add_callbacks(callback=self._handle_page, errback=self._handle_error)
+        
+        # Check if the response_future already has an error
+        # This can happen with very short timeouts
+        if hasattr(self.response_future, '_final_exception') and self.response_future._final_exception:
+            self._handle_error(self.response_future._final_exception)
 
     def _handle_page(self, rows: Optional[List[Any]]) -> None:
         """Handle successful page retrieval.

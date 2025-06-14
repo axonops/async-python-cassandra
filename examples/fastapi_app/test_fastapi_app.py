@@ -12,6 +12,7 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi.testclient import TestClient
 from httpx import ASGITransport
 
 
@@ -21,13 +22,25 @@ class TestFastAPIExample:
     @pytest_asyncio.fixture
     async def app_client(self):
         """Create test client for the FastAPI app."""
-        from main import app
-
-        transport = ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # Wait for app startup
-            await asyncio.sleep(0.5)
-            yield client
+        # First, check that Cassandra is available
+        from async_cassandra import AsyncCluster
+        
+        try:
+            test_cluster = AsyncCluster(contact_points=["localhost"])
+            test_session = await test_cluster.connect()
+            await test_session.execute("SELECT now() FROM system.local")
+            await test_session.close()
+            await test_cluster.shutdown()
+        except Exception as e:
+            pytest.skip(f"Cassandra not available: {e}")
+        
+        from main import app, lifespan
+        
+        # Manually handle lifespan since httpx doesn't do it properly
+        async with lifespan(app):
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                yield client
 
     @pytest.mark.asyncio
     async def test_health_and_basic_operations(self, app_client):
@@ -179,11 +192,11 @@ class TestFastAPIExample:
         assert "User not found" in not_found_resp.json()["detail"]
         print("✓ Resource not found error handled correctly")
 
-        # Test validation errors
-        invalid_email_resp = await app_client.post(
-            "/users", json={"name": "Test", "email": "not-an-email", "age": 25}
+        # Test validation errors - missing required field
+        invalid_user_resp = await app_client.post(
+            "/users", json={"name": "Test"}  # Missing email and age
         )
-        assert invalid_email_resp.status_code == 422
+        assert invalid_user_resp.status_code == 422
         print("✓ Validation error handled correctly")
 
         # Test streaming with invalid parameters

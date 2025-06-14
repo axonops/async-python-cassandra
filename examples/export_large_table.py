@@ -65,39 +65,40 @@ async def export_table_async(session, table_name: str, output_file: str):
 
     # Start streaming
     start_time = datetime.now()
-    result = await session.execute_stream(f"SELECT * FROM {table_name}", stream_config=config)
+    
+    # CRITICAL: Use context manager for streaming to prevent memory leaks
+    async with await session.execute_stream(f"SELECT * FROM {table_name}", stream_config=config) as result:
+        # Export to CSV
+        async with aiofiles.open(output_file, "w", newline="") as f:
+            writer = None
+            row_count = 0
 
-    # Export to CSV
-    async with aiofiles.open(output_file, "w", newline="") as f:
-        writer = None
-        row_count = 0
+            async for row in result:
+                if writer is None:
+                    # Write header on first row
+                    fieldnames = row._fields
+                    header = ",".join(fieldnames) + "\n"
+                    await f.write(header)
 
-        async for row in result:
-            if writer is None:
-                # Write header on first row
-                fieldnames = row._fields
-                header = ",".join(fieldnames) + "\n"
-                await f.write(header)
+                # Write row data
+                row_data = []
+                for field in row._fields:
+                    value = getattr(row, field)
+                    # Handle special types
+                    if value is None:
+                        row_data.append("")
+                    elif isinstance(value, (list, set)):
+                        row_data.append(str(value))
+                    elif isinstance(value, dict):
+                        row_data.append(str(value))
+                    elif isinstance(value, datetime):
+                        row_data.append(value.isoformat())
+                    else:
+                        row_data.append(str(value))
 
-            # Write row data
-            row_data = []
-            for field in row._fields:
-                value = getattr(row, field)
-                # Handle special types
-                if value is None:
-                    row_data.append("")
-                elif isinstance(value, (list, set)):
-                    row_data.append(str(value))
-                elif isinstance(value, dict):
-                    row_data.append(str(value))
-                elif isinstance(value, datetime):
-                    row_data.append(value.isoformat())
-                else:
-                    row_data.append(str(value))
-
-            line = ",".join(row_data) + "\n"
-            await f.write(line)
-            row_count += 1
+                line = ",".join(row_data) + "\n"
+                await f.write(line)
+                row_count += 1
 
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info("\nExport completed:")
@@ -128,34 +129,35 @@ def export_table_sync(session, table_name: str, output_file: str):
         )
 
         start_time = datetime.now()
-        result = await session.execute_stream(f"SELECT * FROM {table_name}", stream_config=config)
+        
+        # Use context manager for proper streaming cleanup
+        async with await session.execute_stream(f"SELECT * FROM {table_name}", stream_config=config) as result:
+            # Export to CSV synchronously
+            with open(output_file, "w", newline="") as f:
+                writer = None
+                row_count = 0
 
-        # Export to CSV synchronously
-        with open(output_file, "w", newline="") as f:
-            writer = None
-            row_count = 0
+                async for row in result:
+                    if writer is None:
+                        # Create CSV writer with field names
+                        fieldnames = row._fields
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
 
-            async for row in result:
-                if writer is None:
-                    # Create CSV writer with field names
-                    fieldnames = row._fields
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
+                    # Convert row to dict and write
+                    row_dict = {}
+                    for field in row._fields:
+                        value = getattr(row, field)
+                        # Handle special types
+                        if isinstance(value, (datetime,)):
+                            row_dict[field] = value.isoformat()
+                        elif isinstance(value, (list, set, dict)):
+                            row_dict[field] = str(value)
+                        else:
+                            row_dict[field] = value
 
-                # Convert row to dict and write
-                row_dict = {}
-                for field in row._fields:
-                    value = getattr(row, field)
-                    # Handle special types
-                    if isinstance(value, (datetime,)):
-                        row_dict[field] = value.isoformat()
-                    elif isinstance(value, (list, set, dict)):
-                        row_dict[field] = str(value)
-                    else:
-                        row_dict[field] = value
-
-                writer.writerow(row_dict)
-                row_count += 1
+                    writer.writerow(row_dict)
+                    row_count += 1
 
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info("\nExport completed:")

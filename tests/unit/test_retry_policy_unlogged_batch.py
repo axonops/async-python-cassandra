@@ -128,14 +128,14 @@ class TestUnloggedBatchRetry:
 
         # Test data: (write_type, has_idempotent, idempotent_value, should_retry)
         test_cases = [
-            ("SIMPLE", False, None, False),  # Simple without idempotent
-            ("SIMPLE", True, True, True),  # Simple with idempotent=True
-            ("BATCH", False, None, False),  # Logged batch without idempotent
-            ("BATCH", True, True, True),  # Logged batch with idempotent=True
-            ("UNLOGGED_BATCH", False, None, False),  # Unlogged batch without idempotent
-            ("UNLOGGED_BATCH", True, True, True),  # Unlogged batch with idempotent=True
-            ("UNLOGGED_BATCH", True, False, False),  # Unlogged batch with idempotent=False
-            ("COUNTER", True, True, False),  # Counter (not in retry list)
+            (WriteType.SIMPLE, False, None, False),  # Simple without idempotent
+            (WriteType.SIMPLE, True, True, True),  # Simple with idempotent=True
+            (WriteType.BATCH, False, None, False),  # Logged batch without idempotent
+            (WriteType.BATCH, True, True, True),  # Logged batch with idempotent=True
+            (WriteType.UNLOGGED_BATCH, False, None, False),  # Unlogged batch without idempotent
+            (WriteType.UNLOGGED_BATCH, True, True, True),  # Unlogged batch with idempotent=True
+            (WriteType.UNLOGGED_BATCH, True, False, False),  # Unlogged batch with idempotent=False
+            (WriteType.COUNTER, True, True, False),  # Counter (not in retry list)
         ]
 
         for write_type, has_attr, attr_value, should_retry in test_cases:

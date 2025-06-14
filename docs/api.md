@@ -231,6 +231,8 @@ async def execute_stream(
 
 Execute a query and return results as an async stream for memory-efficient processing of large result sets.
 
+**⚠️ CRITICAL**: Streaming result sets MUST be properly closed to prevent memory leaks. The streaming implementation uses callbacks that create circular references. Always use a context manager or ensure proper cleanup.
+
 **Parameters:**
 - `query`: The CQL query to execute
 - `parameters`: Query parameters (for prepared statements)
@@ -243,20 +245,41 @@ Execute a query and return results as an async stream for memory-efficient proce
 ```python
 from async_cassandra.streaming import StreamConfig
 
-# Stream large result set with custom fetch size
+# ✅ BEST PRACTICE: Always use context manager
 config = StreamConfig(fetch_size=1000)
-result = await session.execute_stream(
+async with await session.execute_stream(
     "SELECT * FROM large_table",
     stream_config=config
-)
+) as result:
+    # Process rows one at a time without loading all into memory
+    async for row in result:
+        await process_row(row)
+# Result automatically closed, preventing memory leaks
 
-# Process rows one at a time without loading all into memory
+# ✅ Alternative: Manual cleanup with try/finally
+result = await session.execute_stream("SELECT * FROM large_table")
+try:
+    async for row in result:
+        await process_row(row)
+finally:
+    await result.close()  # CRITICAL: Must close!
+
+# ❌ NEVER DO THIS - Memory leak!
+result = await session.execute_stream("SELECT * FROM large_table")
 async for row in result:
-    await process_row(row)
-    
-# Or process by pages
-async for page in result.pages():
-    await process_page(page)
+    process_row(row)
+# Result not closed - callbacks remain in memory forever!
+```
+
+**Processing by Pages:**
+```python
+# Context manager works with pages() too
+async with await session.execute_stream(
+    "SELECT * FROM large_table",
+    stream_config=StreamConfig(fetch_size=5000)
+) as result:
+    async for page in result.pages():
+        await process_page(page)  # Process 5000 rows at a time
 ```
 
 #### `prepare`

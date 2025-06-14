@@ -231,17 +231,55 @@ config = StreamConfig(
     fetch_size=1000  # Fetch 1000 rows at a time
 )
 
-# Execute with streaming
-result = await session.execute_stream(
+# ⚠️ CRITICAL: Always use context manager to prevent memory leaks!
+# Streaming results MUST be properly closed or memory will leak
+async with await session.execute_stream(
     "SELECT * FROM billion_row_table",
     stream_config=config
-)
-
-# Process rows one at a time - only 1000 in memory at once
-async for row in result:
-    await process_row(row)
-    # Previous rows are garbage collected
+) as result:
+    # Process rows one at a time - only 1000 in memory at once
+    async for row in result:
+        await process_row(row)
+        # Previous rows are garbage collected
+# Result automatically closed when exiting context
 ```
+
+#### ⚠️ CRITICAL: Proper Resource Cleanup
+
+**IMPORTANT**: Streaming result sets create internal callbacks that can cause memory leaks if not properly closed. You MUST use one of these patterns:
+
+**✅ BEST PRACTICE - Context Manager (Recommended):**
+```python
+# This ensures cleanup even if exceptions occur
+async with await session.execute_stream(query, stream_config=config) as result:
+    async for row in result:
+        await process_row(row)
+# Automatically closed, preventing memory leaks
+```
+
+**✅ Alternative - try/finally:**
+```python
+# Only use if context manager isn't possible
+result = await session.execute_stream(query, stream_config=config)
+try:
+    async for row in result:
+        await process_row(row)
+finally:
+    await result.close()  # CRITICAL: Must always close!
+```
+
+**❌ NEVER DO THIS - Memory Leak:**
+```python
+# This will leak memory!
+result = await session.execute_stream(query, stream_config=config)
+async for row in result:
+    process_row(row)
+# Result not closed - callbacks remain in memory forever!
+```
+
+#### Why This Happens
+
+The streaming implementation uses callbacks to coordinate with the Cassandra driver. These callbacks create circular references that Python's garbage collector cannot clean up automatically. Without explicit cleanup via `close()` or a context manager, these references persist indefinitely, causing memory leaks.
 
 #### When to Use Streaming
 
@@ -250,6 +288,58 @@ async for row in result:
 - ✅ Generating reports from large datasets
 - ✅ Any query returning thousands+ of rows
 - ❌ Don't use for small queries (adds overhead)
+
+#### Complete Streaming Example
+
+Here's a real-world example showing proper streaming usage with error handling:
+
+```python
+import asyncio
+from async_cassandra import AsyncCluster
+from async_cassandra.streaming import StreamConfig
+
+async def export_user_data(session, output_file):
+    """Export all users to a CSV file using streaming."""
+    config = StreamConfig(
+        fetch_size=5000,  # Process 5000 rows at a time
+        page_callback=lambda page_num, rows: print(f"Processing page {page_num}...")
+    )
+    
+    # CRITICAL: Use context manager for automatic cleanup
+    async with await session.execute_stream(
+        "SELECT id, name, email, created_at FROM users",
+        stream_config=config
+    ) as result:
+        with open(output_file, 'w') as f:
+            f.write("id,name,email,created_at\n")
+            
+            row_count = 0
+            async for row in result:
+                f.write(f"{row.id},{row.name},{row.email},{row.created_at}\n")
+                row_count += 1
+                
+                # Progress update every 10,000 rows
+                if row_count % 10000 == 0:
+                    print(f"Exported {row_count:,} users...")
+    
+    # Result is automatically closed here, preventing memory leaks
+    print(f"Export complete! Total users: {row_count:,}")
+    return row_count
+
+# Usage
+async def main():
+    async with AsyncCluster(['localhost']) as cluster:
+        async with await cluster.connect('my_keyspace') as session:
+            await export_user_data(session, 'users_export.csv')
+
+asyncio.run(main())
+```
+
+**Key Points:**
+1. Context manager (`async with`) ensures cleanup even if errors occur
+2. Large `fetch_size` (5000) for better performance with small rows
+3. Progress tracking without keeping all data in memory
+4. File operations inside the streaming context for consistency
 
 ## Integration with Web Frameworks
 

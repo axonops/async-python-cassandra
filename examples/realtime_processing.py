@@ -236,30 +236,31 @@ async def process_historical_data(session, processor: RealTimeProcessor):
 
     # Stream and process data
     start_time = datetime.now()
-    result = await session.execute_stream(
+    
+    # Use context manager for proper resource cleanup
+    async with await session.execute_stream(
         stmt, parameters=[today, one_hour_ago], stream_config=config
-    )
-
-    readings_processed = 0
-    async for row in result:
-        reading = SensorReading(
-            sensor_id=row.sensor_id,
-            timestamp=row.timestamp,
-            temperature=row.temperature,
-            humidity=row.humidity,
-            pressure=row.pressure,
-        )
-        processor.process_reading(reading)
-        readings_processed += 1
-
-        # Log progress periodically
-        if readings_processed % 5000 == 0:
-            summary = processor.get_summary()
-            logger.info(
-                f"Progress: {readings_processed} readings - "
-                f"{summary['active_sensors']} sensors - "
-                f"{summary['alerts_triggered']} alerts"
+    ) as result:
+        readings_processed = 0
+        async for row in result:
+            reading = SensorReading(
+                sensor_id=row.sensor_id,
+                timestamp=row.timestamp,
+                temperature=row.temperature,
+                humidity=row.humidity,
+                pressure=row.pressure,
             )
+            processor.process_reading(reading)
+            readings_processed += 1
+
+            # Log progress periodically
+            if readings_processed % 5000 == 0:
+                summary = processor.get_summary()
+                logger.info(
+                    f"Progress: {readings_processed} readings - "
+                    f"{summary['active_sensors']} sensors - "
+                    f"{summary['alerts_triggered']} alerts"
+                )
 
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info(f"\nProcessing completed in {elapsed:.2f} seconds")
@@ -295,21 +296,21 @@ async def simulate_realtime_processing(session, processor: RealTimeProcessor):
         today = datetime.now().date()
 
         for sensor_id in sensors:
-            result = await session.execute_stream(
+            # Use context manager to ensure proper cleanup
+            async with await session.execute_stream(
                 stmt,
                 parameters=[today, sensor_id, cutoff_time],
                 stream_config=StreamConfig(fetch_size=10),
-            )
-
-            async for row in result:
-                reading = SensorReading(
-                    sensor_id=row.sensor_id,
-                    timestamp=row.timestamp,
-                    temperature=row.temperature,
-                    humidity=row.humidity,
-                    pressure=row.pressure,
-                )
-                processor.process_reading(reading)
+            ) as result:
+                async for row in result:
+                    reading = SensorReading(
+                        sensor_id=row.sensor_id,
+                        timestamp=row.timestamp,
+                        temperature=row.temperature,
+                        humidity=row.humidity,
+                        pressure=row.pressure,
+                    )
+                    processor.process_reading(reading)
 
         # Show current statistics
         summary = processor.get_summary()

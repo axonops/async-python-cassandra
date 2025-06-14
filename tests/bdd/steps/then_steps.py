@@ -291,7 +291,7 @@ def verify_error_message_contains(connection_result, text):
 
 
 @then("the connection should fail with NoHostAvailable error")
-def verify_no_host_available_error(connection_result):
+def verify_connection_no_host_available_error(connection_result):
     """Verify connection failed with NoHostAvailable error."""
     assert not connection_result["success"], "Connection should have failed"
     error_msg = str(connection_result["error"])
@@ -307,7 +307,9 @@ def verify_protocol_incompatibility_message(connection_result):
     error_msg = str(connection_result["error"])
     # Check for various protocol-related error messages
     protocol_keywords = ["protocol", "version", "v5", "Cassandra 4.0"]
-    assert any(keyword in error_msg for keyword in protocol_keywords), f"Error message should mention protocol incompatibility, but was: {error_msg}"
+    assert any(
+        keyword in error_msg for keyword in protocol_keywords
+    ), f"Error message should mention protocol incompatibility, but was: {error_msg}"
     return True
 
 
@@ -322,7 +324,9 @@ def verify_configuration_error(cluster_creation_result):
 @then("the connection should succeed")
 def verify_connection_success(connection_result):
     """Verify connection succeeded."""
-    assert connection_result["success"], f"Connection should have succeeded but failed with: {connection_result.get('error')}"
+    assert connection_result[
+        "success"
+    ], f"Connection should have succeeded but failed with: {connection_result.get('error')}"
     return True
 
 
@@ -331,7 +335,9 @@ def verify_protocol_version_min(connection_result, version):
     """Verify negotiated protocol version is at least the specified version."""
     assert connection_result["success"], "Connection should have succeeded"
     actual_version = connection_result["protocol_version"]
-    assert actual_version >= version, f"Protocol version should be {version} or higher, but was {actual_version}"
+    assert (
+        actual_version >= version
+    ), f"Protocol version should be {version} or higher, but was {actual_version}"
     return True
 
 
@@ -340,5 +346,7 @@ def verify_protocol_version_exact(connection_result, version):
     """Verify negotiated protocol version is exactly the specified version."""
     assert connection_result["success"], "Connection should have succeeded"
     actual_version = connection_result["protocol_version"]
-    assert actual_version == version, f"Protocol version should be exactly {version}, but was {actual_version}"
+    assert (
+        actual_version == version
+    ), f"Protocol version should be exactly {version}, but was {actual_version}"
     return True

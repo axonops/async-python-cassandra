@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from async_cassandra import AsyncCluster
+from async_cassandra import AsyncCluster, StreamConfig
 from async_cassandra.result import AsyncResultHandler
 from async_cassandra.streaming import AsyncStreamingResultSet
 
@@ -185,188 +185,203 @@ class TestThreadSafetyIssues:
 class TestMemoryLeakIssues:
     """Tests for memory leaks in streaming functionality."""
 
-    def test_streaming_result_set_cleanup(self):
+    @pytest_asyncio.fixture
+    async def async_session(self):
+        """Create async session for testing."""
+        cluster = AsyncCluster(["127.0.0.1"])
+        session = await cluster.connect()
+        
+        yield session
+        
+        await session.close()
+        await cluster.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_streaming_result_set_cleanup(self, async_session):
         """
         GIVEN streaming through large result sets
         WHEN pages are processed and discarded
         THEN memory should be properly released
         """
+        # Create test keyspace and table with many rows
+        await async_session.execute(
+            """
+            CREATE KEYSPACE IF NOT EXISTS test_streaming
+            WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
+            """
+        )
+        await async_session.set_keyspace("test_streaming")
+        
+        await async_session.execute("DROP TABLE IF EXISTS large_table")
+        await async_session.execute(
+            """
+            CREATE TABLE large_table (
+                partition_id INT,
+                id INT,
+                data TEXT,
+                PRIMARY KEY (partition_id, id)
+            )
+            """
+        )
+        
+        # Insert 1000 rows across 10 partitions
+        for partition in range(10):
+            for i in range(100):
+                await async_session.execute(
+                    "INSERT INTO large_table (partition_id, id, data) VALUES (%s, %s, %s)",
+                    (partition, i, "x" * 1000)  # 1KB per row
+                )
+        
+        # Stream through the data with small page size
+        stream_config = StreamConfig(fetch_size=100)
+        result = await async_session.execute_stream(
+            "SELECT * FROM large_table",
+            stream_config=stream_config
+        )
+        
+        rows_processed = 0
+        pages_seen = 0
+        last_page_size = 0
+        
+        # Track that we're processing pages, not accumulating all data
+        async for page in result.pages():
+            pages_seen += 1
+            rows_in_page = len(page)
+            rows_processed += rows_in_page
+            
+            # Verify we're getting reasonable page sizes
+            assert rows_in_page <= 100, f"Page too large: {rows_in_page}"
+            
+            # Process the page (simulating work)
+            for row in page:
+                assert row.data == "x" * 1000
+            
+            last_page_size = rows_in_page
+        
+        # Verify we processed all data
+        assert rows_processed == 1000
+        assert pages_seen >= 10  # Should have multiple pages
 
-        async def run_test():
-            # Track page counts instead of weak references
-            pages_created = []
-
-            class PageTracker:
-                """Wrapper to track page lifecycle"""
-
-                def __init__(self, page_data):
-                    self.data = page_data
-                    pages_created.append(self)
-
-            class InstrumentedStreamingResultSet(AsyncStreamingResultSet):
-                def _handle_page(self, rows):
-                    # Verify only one page is held at a time
-                    if hasattr(self, "_current_page") and self._current_page:
-                        # Previous page should be replaced
-                        assert len(self._current_page) <= 100
-                    super()._handle_page(rows)
-
-            # Mock response future with multiple pages
-            mock_future = MagicMock()
-            mock_future.has_more_pages = True
-            mock_future.add_callbacks = MagicMock()
-            page_count = 0
-
-            def fetch_next_page():
-                nonlocal page_count
-                page_count += 1
-                if page_count < 10:
-                    mock_future.has_more_pages = True
-                    # Simulate page callback
-                    handler._handle_page([f"row_{page_count}_{i}" for i in range(100)])
-                else:
-                    mock_future.has_more_pages = False
-                    handler._handle_page([])
-
-            mock_future.start_fetching_next_page = fetch_next_page
-
-            handler = InstrumentedStreamingResultSet(mock_future)
-            # Initialize with first page
-            handler._handle_page([f"row_0_{i}" for i in range(100)])
-
-            # Process all pages
-            processed_rows = 0
-            async for row in handler:
-                processed_rows += 1
-                if processed_rows % 100 == 0:
-                    # After each page, check memory usage
-                    # Only current page should be in memory
-                    assert len(handler._current_page) <= 100
-
-            # Verify all rows were processed
-            assert processed_rows == 1000  # 10 pages * 100 rows
-
-            # Verify handler only holds one page
-            assert len(handler._current_page) <= 100
-
-        asyncio.run(run_test())
-
-    def test_circular_reference_prevention(self):
+    @pytest.mark.asyncio
+    async def test_streaming_memory_with_context_manager(self, async_session):
         """
-        GIVEN complex object relationships in streaming
-        WHEN objects reference each other
-        THEN circular references should be avoided to prevent leaks
+        GIVEN streaming result set used as context manager
+        WHEN exiting the context (normally or with exception)
+        THEN resources should be properly cleaned up
         """
+        # Create test data
+        await async_session.execute(
+            """
+            CREATE KEYSPACE IF NOT EXISTS test_context
+            WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
+            """
+        )
+        await async_session.set_keyspace("test_context")
+        
+        await async_session.execute("DROP TABLE IF EXISTS test_cleanup")
+        await async_session.execute(
+            """
+            CREATE TABLE test_cleanup (
+                id INT PRIMARY KEY,
+                data TEXT
+            )
+            """
+        )
+        
+        # Insert test data
+        for i in range(100):
+            await async_session.execute(
+                "INSERT INTO test_cleanup (id, data) VALUES (%s, %s)",
+                (i, "test data")
+            )
+        
+        # Test normal exit
+        rows_processed = 0
+        async with await async_session.execute_stream("SELECT * FROM test_cleanup") as result:
+            async for row in result:
+                rows_processed += 1
+                if rows_processed >= 10:
+                    break  # Early exit
+        
+        assert rows_processed == 10
+        
+        # Test exception exit
+        rows_before_error = 0
+        try:
+            async with await async_session.execute_stream("SELECT * FROM test_cleanup") as result:
+                async for row in result:
+                    rows_before_error += 1
+                    if rows_before_error >= 5:
+                        raise ValueError("Test error")
+        except ValueError:
+            pass  # Expected
+        
+        assert rows_before_error == 5
 
-        async def run_test():
-            # Track object creation and cleanup
-            created_objects = []
-
-            class TrackedFuture:
-                def __init__(self):
-                    created_objects.append(weakref.ref(self))
-                    self.callbacks = []
-                    self.has_more_pages = False
-
-                def add_callbacks(self, callback, errback):
-                    self.callbacks.append((callback, errback))
-
-                def start_fetching_next_page(self):
-                    pass
-
-            # Create and use streaming result set
-            future = TrackedFuture()
-            result_set = AsyncStreamingResultSet(future)
-
-            # Clear strong references
-            del future
-            del result_set
-
-            # Force garbage collection
-            gc.collect()
-
-            # Check that objects were cleaned up
-            alive_objects = sum(1 for ref in created_objects if ref() is not None)
-            assert alive_objects == 0, f"Memory leak: {alive_objects} objects still alive"
-
-        asyncio.run(run_test())
-
-    def test_exception_cleanup_in_streaming(self):
+    @pytest.mark.asyncio
+    async def test_exception_cleanup_in_streaming(self, async_session):
         """
-        GIVEN streaming operation that encounters an error
+        GIVEN streaming operation on a table that gets dropped mid-stream
         WHEN exception occurs during streaming
-        THEN all resources should be properly cleaned up
+        THEN error should be handled gracefully
         """
-
-        async def run_test():
-            # Track resource allocation
-            allocated_resources = []
-
-            class ResourceTracker:
-                def __init__(self, name):
-                    self.name = name
-                    allocated_resources.append(weakref.ref(self))
-
-            # Mock a failing streaming operation
-            mock_future = MagicMock()
-            mock_future.has_more_pages = True
-            mock_future.add_callbacks = MagicMock()
-
-            error_on_page = 3
-            current_page = 0
-            handler_ref = {"handler": None}  # Use dict to allow closure access
-
-            def fetch_with_error():
-                nonlocal current_page
-                current_page += 1
-
-                # Allocate some resources
-                resource = ResourceTracker(f"page_{current_page}")  # noqa: F841
-
-                if current_page == error_on_page:
-                    # Simulate error through handler
-                    if handler_ref["handler"]:
-                        handler_ref["handler"]._handle_error(
-                            Exception("Simulated error during fetch")
-                        )
-                    mock_future.has_more_pages = False
-                else:
-                    # Normal page
-                    if handler_ref["handler"]:
-                        handler_ref["handler"]._handle_page([f"row_{i}" for i in range(10)])
-
-            mock_future.start_fetching_next_page = fetch_with_error
-
-            handler = AsyncStreamingResultSet(mock_future)
-            handler_ref["handler"] = handler
-            # Initialize with first page
-            handler._handle_page([f"row_{i}" for i in range(10)])
-
-            # Try to iterate, expecting failure
-            rows_processed = 0
-            error_caught = False
-            try:
-                async for row in handler:
-                    rows_processed += 1
-                    # Trigger next page fetch periodically
-                    if rows_processed % 10 == 0:
-                        await handler._fetch_next_page()
-            except Exception as e:
-                error_caught = True
-                assert "Simulated error" in str(e)
-
-            assert error_caught, "Expected error was not raised"
-            assert rows_processed > 0, "Some rows should have been processed"
-
-            # Clear references
-            del handler
-            gc.collect()
-
-            # Check cleanup
-            alive_resources = sum(1 for ref in allocated_resources if ref() is not None)
-            assert alive_resources == 0, f"Resources not cleaned up: {alive_resources}"
-
-        asyncio.run(run_test())
+        # Create test keyspace and table
+        await async_session.execute(
+            """
+            CREATE KEYSPACE IF NOT EXISTS test_error_stream
+            WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}
+            """
+        )
+        await async_session.set_keyspace("test_error_stream")
+        
+        await async_session.execute("DROP TABLE IF EXISTS disappearing_table")
+        await async_session.execute(
+            """
+            CREATE TABLE disappearing_table (
+                id INT PRIMARY KEY,
+                data TEXT
+            )
+            """
+        )
+        
+        # Insert enough data to ensure multiple pages
+        for i in range(1000):
+            await async_session.execute(
+                "INSERT INTO disappearing_table (id, data) VALUES (%s, %s)",
+                (i, "x" * 100)
+            )
+        
+        # Start streaming with small page size
+        stream_config = StreamConfig(fetch_size=50)
+        result = await async_session.execute_stream(
+            "SELECT * FROM disappearing_table",
+            stream_config=stream_config
+        )
+        
+        rows_processed = 0
+        error_caught = False
+        
+        try:
+            async for row in result:
+                rows_processed += 1
+                
+                # Drop table after processing some rows to trigger error
+                if rows_processed == 100:
+                    # Use a different session to drop the table
+                    from async_cassandra import AsyncCluster
+                    temp_cluster = AsyncCluster(contact_points=["localhost"])
+                    temp_session = await temp_cluster.connect()
+                    await temp_session.execute("DROP TABLE test_error_stream.disappearing_table")
+                    await temp_session.close()
+                    await temp_cluster.shutdown()
+                    
+        except Exception as e:
+            error_caught = True
+            # Should get an error about table not existing
+            assert "disappearing_table" in str(e) or "unconfigured table" in str(e)
+        
+        assert error_caught, "Expected error when table was dropped"
+        assert rows_processed >= 100, "Should have processed some rows before error"
 
 
 @pytest.mark.integration

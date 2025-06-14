@@ -7,7 +7,6 @@ from cassandra.cluster import NoHostAvailable
 from pytest_bdd import parsers, when
 
 from async_cassandra import AsyncCluster
-from async_cassandra.exceptions import ConfigurationError, ConnectionError
 
 
 @when("I create an async session", target_fixture="test_context")
@@ -238,8 +237,7 @@ async def connect_without_protocol_version(cassandra_version_cluster_running, co
     """Try to connect without specifying protocol version."""
     try:
         cluster = AsyncCluster(
-            contact_points=["127.0.0.1"],
-            port=cassandra_version_cluster_running["port"]
+            contact_points=["127.0.0.1"], port=cassandra_version_cluster_running["port"]
         )
         session = await cluster.connect()
         context.cluster = cluster
@@ -249,31 +247,42 @@ async def connect_without_protocol_version(cassandra_version_cluster_running, co
         return {"success": False, "error": e, "error_type": type(e).__name__}
 
 
-@when(parsers.parse("I try to connect with protocol version {version:d}"), target_fixture="connection_result")
+@when(
+    parsers.parse("I try to connect with protocol version {version:d}"),
+    target_fixture="connection_result",
+)
 async def connect_with_protocol_version(cassandra_version_cluster_running, version, context):
     """Try to connect with a specific protocol version."""
     try:
         cluster = AsyncCluster(
             contact_points=["127.0.0.1"],
             port=cassandra_version_cluster_running["port"],
-            protocol_version=version
+            protocol_version=version,
         )
         session = await cluster.connect()
         context.cluster = cluster
         context.session = session
-        return {"success": True, "cluster": cluster, "session": session, "protocol_version": version}
+        return {
+            "success": True,
+            "cluster": cluster,
+            "session": session,
+            "protocol_version": version,
+        }
     except Exception as e:
         return {"success": False, "error": e, "error_type": type(e).__name__}
 
 
-@when(parsers.parse("I try to create a cluster with protocol version {version:d}"), target_fixture="cluster_creation_result")
+@when(
+    parsers.parse("I try to create a cluster with protocol version {version:d}"),
+    target_fixture="cluster_creation_result",
+)
 def create_cluster_with_protocol_version(cassandra_version_cluster_running, version):
     """Try to create a cluster with a specific protocol version."""
     try:
         cluster = AsyncCluster(
             contact_points=["127.0.0.1"],
             port=cassandra_version_cluster_running["port"],
-            protocol_version=version
+            protocol_version=version,
         )
         return {"success": True, "cluster": cluster, "protocol_version": version}
     except Exception as e:
@@ -285,33 +294,44 @@ async def connect_to_cassandra_5(cassandra_version_cluster_running, context):
     """Connect to Cassandra 5 without specifying protocol version."""
     try:
         cluster = AsyncCluster(
-            contact_points=["127.0.0.1"],
-            port=cassandra_version_cluster_running["port"]
+            contact_points=["127.0.0.1"], port=cassandra_version_cluster_running["port"]
         )
         session = await cluster.connect()
         context.cluster = cluster
         context.session = session
         # Get the negotiated protocol version
         protocol_version = cluster._cluster.protocol_version
-        return {"success": True, "cluster": cluster, "session": session, "protocol_version": protocol_version}
+        return {
+            "success": True,
+            "cluster": cluster,
+            "session": session,
+            "protocol_version": protocol_version,
+        }
     except Exception as e:
         return {"success": False, "error": e, "error_type": type(e).__name__}
 
 
-@when(parsers.parse("I connect with protocol version {version:d}"), target_fixture="connection_result")
+@when(
+    parsers.parse("I connect with protocol version {version:d}"), target_fixture="connection_result"
+)
 async def connect_to_cassandra_5_with_version(cassandra_version_cluster_running, version, context):
     """Connect to Cassandra 5 with a specific protocol version."""
     try:
         cluster = AsyncCluster(
             contact_points=["127.0.0.1"],
             port=cassandra_version_cluster_running["port"],
-            protocol_version=version
+            protocol_version=version,
         )
         session = await cluster.connect()
         context.cluster = cluster
         context.session = session
         # Get the actual protocol version being used
         protocol_version = cluster._cluster.protocol_version
-        return {"success": True, "cluster": cluster, "session": session, "protocol_version": protocol_version}
+        return {
+            "success": True,
+            "cluster": cluster,
+            "session": session,
+            "protocol_version": protocol_version,
+        }
     except Exception as e:
         return {"success": False, "error": e, "error_type": type(e).__name__}

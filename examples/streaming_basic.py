@@ -107,24 +107,24 @@ async def basic_streaming_example(session):
     logger.info("Starting to stream all events...")
     start_time = datetime.now()
 
-    result = await session.execute_stream("SELECT * FROM events", stream_config=config)
+    # CRITICAL: Always use context manager to prevent memory leaks
+    async with await session.execute_stream("SELECT * FROM events", stream_config=config) as result:
+        # Process rows one at a time
+        event_count = 0
+        event_types = {}
 
-    # Process rows one at a time
-    event_count = 0
-    event_types = {}
+        async for row in result:
+            event_count += 1
 
-    async for row in result:
-        event_count += 1
+            # Track event types
+            event_type = row.event_type
+            event_types[event_type] = event_types.get(event_type, 0) + 1
 
-        # Track event types
-        event_type = row.event_type
-        event_types[event_type] = event_types.get(event_type, 0) + 1
-
-        # Log progress every 1000 events
-        if event_count % 1000 == 0:
-            elapsed = (datetime.now() - start_time).total_seconds()
-            rate = event_count / elapsed
-            logger.info(f"Processed {event_count} events ({rate:.0f} events/sec)")
+            # Log progress every 1000 events
+            if event_count % 1000 == 0:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                rate = event_count / elapsed
+                logger.info(f"Processed {event_count} events ({rate:.0f} events/sec)")
 
     elapsed = (datetime.now() - start_time).total_seconds()
     logger.info("\nStreaming completed:")
@@ -153,13 +153,13 @@ async def filtered_streaming_example(session):
 
     config = StreamConfig(fetch_size=500)
 
-    result = await session.execute_stream(
+    # Use context manager for proper cleanup
+    async with await session.execute_stream(
         stmt, parameters=[partition_id, event_type], stream_config=config
-    )
-
-    count = 0
-    async for row in result:
-        count += 1
+    ) as result:
+        count = 0
+        async for row in result:
+            count += 1
 
     logger.info(f"Found {count} events in partition {partition_id} of type '{event_type}'")
 
@@ -170,21 +170,21 @@ async def page_based_streaming_example(session):
 
     config = StreamConfig(fetch_size=2000, max_pages=5)  # Limit to 5 pages for demo
 
-    result = await session.execute_stream("SELECT * FROM events", stream_config=config)
+    # Use context manager for automatic resource cleanup
+    async with await session.execute_stream("SELECT * FROM events", stream_config=config) as result:
+        # Process data page by page
+        page_count = 0
+        total_events = 0
 
-    # Process data page by page
-    page_count = 0
-    total_events = 0
+        async for page in result.pages():
+            page_count += 1
+            events_in_page = len(page)
+            total_events += events_in_page
 
-    async for page in result.pages():
-        page_count += 1
-        events_in_page = len(page)
-        total_events += events_in_page
+            logger.info(f"Processing page {page_count} with {events_in_page} events")
 
-        logger.info(f"Processing page {page_count} with {events_in_page} events")
-
-        # Simulate batch processing
-        await asyncio.sleep(0.1)  # Simulate processing time
+            # Simulate batch processing
+            await asyncio.sleep(0.1)  # Simulate processing time
 
     logger.info(f"Processed {page_count} pages with {total_events} total events")
 
