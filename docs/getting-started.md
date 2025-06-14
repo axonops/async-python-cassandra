@@ -8,6 +8,14 @@ This guide walks you through the basics of using async-cassandra. For complete A
 pip install async-cassandra
 ```
 
+## Requirements
+
+- **Cassandra 4.0+** - Required for CQL protocol v5 support
+- **Python 3.12+** - For modern async features
+- **CQL Protocol v5+** - Older protocols are not supported
+
+> **Note on Protocol Versions**: async-cassandra requires CQL protocol v5 or higher for optimal async performance. If you're using Cassandra 3.x or older, you'll need to upgrade. See the [protocol version documentation](#protocol-version-configuration) for details.
+
 ## Quick Start
 
 ### Your First async-cassandra Program
@@ -339,6 +347,69 @@ async def create_user(name: str, email: str):
 2. **Prepared statements at startup**: Better performance, prepare once, use many times
 3. **Proper error handling**: Convert Cassandra errors to HTTP errors
 4. **UUID handling**: Cassandra uses UUIDs, web uses strings - convert properly
+
+## Protocol Version Configuration
+
+### Understanding Protocol Versions
+
+CQL (Cassandra Query Language) protocol versions define how clients communicate with Cassandra. async-cassandra requires **protocol v5 or higher** because:
+
+- **Better streaming**: v5+ has improved streaming capabilities for large result sets
+- **Enhanced features**: Modern error handling, better metadata, improved performance
+- **Async alignment**: Features that work better with async patterns
+
+### Configuring Protocol Version
+
+```python
+# Option 1: Automatic negotiation (RECOMMENDED)
+# Driver negotiates to highest available version
+cluster = AsyncCluster(['localhost'])  # Gets v6 if available, v5 if not
+
+# Option 2: Explicitly specify v5 or higher
+cluster = AsyncCluster(['localhost'], protocol_version=5)  # Forces v5 exactly
+cluster = AsyncCluster(['localhost'], protocol_version=6)  # Forces v6 (if supported)
+
+# ❌ This will raise ConfigurationError
+cluster = AsyncCluster(['localhost'], protocol_version=4)
+# Error: Protocol version 4 is not supported. async-cassandra requires CQL protocol v5 or higher...
+```
+
+**Important**: async-cassandra verifies protocol v5+ **after connection**:
+- Allows using the highest available version (v6 if supported)
+- Fails with clear error if server only supports v4 or lower
+- Best of both worlds: maximum performance + version enforcement
+
+### Upgrading from Older Cassandra
+
+If you're currently using Cassandra 3.x (protocol v4) or older:
+
+1. **Upgrade Cassandra**: Version 4.0+ supports protocol v5
+   ```bash
+   # Check your current Cassandra version
+   nodetool version
+   ```
+
+2. **Cloud Services**: Most cloud providers already support v5+
+   - AWS Keyspaces: Supports v4 and v5
+   - Azure Cosmos DB: Check current documentation
+   - DataStax Astra: Supports v5+
+
+3. **Migration Path**:
+   - Test with Cassandra 4.x in development first
+   - Protocol v5 is backward compatible with v4 features
+   - No code changes needed beyond the upgrade
+
+### Common Protocol Version Errors
+
+```python
+# Error when using old protocol
+try:
+    cluster = AsyncCluster(['localhost'], protocol_version=3)
+except ConfigurationError as e:
+    print(e)
+    # Output: Protocol version 3 is not supported. async-cassandra requires 
+    # CQL protocol v5 or higher for optimal async performance...
+```
 
 ## Next Steps
 

@@ -128,6 +128,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "caching: mark test as caching test")
     config.addinivalue_line("markers", "chaos: mark test as chaos test")
     config.addinivalue_line("markers", "pagination: mark test as pagination test")
+    config.addinivalue_line("markers", "protocol_version: mark test as protocol version test")
+    config.addinivalue_line("markers", "cassandra_3_11: mark test as requiring Cassandra 3.11")
+    config.addinivalue_line("markers", "cassandra_5: mark test as requiring Cassandra 5")
 
 
 # Automatically mark all BDD tests

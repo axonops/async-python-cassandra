@@ -4,6 +4,7 @@ Test retry policy idempotency checks.
 
 from unittest.mock import Mock
 
+from cassandra.policies import WriteType
 from cassandra.query import ConsistencyLevel, SimpleStatement
 
 from async_cassandra.retry_policy import AsyncRetryPolicy
@@ -23,7 +24,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -43,7 +44,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -63,7 +64,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -83,7 +84,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -102,7 +103,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -122,7 +123,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="COUNTER",
+            write_type=WriteType.COUNTER,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -144,7 +145,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -165,7 +166,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -185,7 +186,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=2,  # Already retried twice
@@ -207,7 +208,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=prepared,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -229,7 +230,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -250,7 +251,7 @@ class TestRetryPolicyIdempotency:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.ONE,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -279,7 +280,7 @@ class TestRetryPolicyIdempotency:
             decision, consistency = policy.on_write_timeout(
                 query=query,
                 consistency=ConsistencyLevel.ONE,
-                write_type="SIMPLE",
+                write_type=WriteType.SIMPLE,
                 required_responses=1,
                 received_responses=0,
                 retry_num=0,
@@ -302,12 +303,12 @@ class TestRetryPolicyIdempotency:
 
         # Even with is_idempotent=True, only SIMPLE, BATCH, and UNLOGGED_BATCH should retry
         write_types_should_retry = {
-            "SIMPLE": True,
-            "BATCH": True,
-            "UNLOGGED_BATCH": True,  # Now retried when idempotent
-            "COUNTER": False,  # Counter updates should never retry
-            "CAS": False,  # Compare-and-swap should not retry
-            "UNKNOWN": False,  # Unknown types should not retry
+            WriteType.SIMPLE: True,
+            WriteType.BATCH: True,
+            WriteType.UNLOGGED_BATCH: True,  # Now retried when idempotent
+            WriteType.COUNTER: False,  # Counter updates should never retry
+            WriteType.CAS: False,  # Compare-and-swap should not retry
+            "UNKNOWN": False,  # Unknown types should not retry (string to test unknown types)
         }
 
         for write_type, should_retry in write_types_should_retry.items():

@@ -5,7 +5,7 @@ Unit tests for async retry policies.
 from unittest.mock import Mock
 
 import pytest
-from cassandra.policies import RetryPolicy
+from cassandra.policies import RetryPolicy, WriteType
 from cassandra.query import ConsistencyLevel
 
 from async_cassandra.retry_policy import AsyncRetryPolicy
@@ -93,7 +93,7 @@ class TestAsyncRetryPolicy:
         decision, consistency = policy.on_write_timeout(
             query=mock_query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -110,7 +110,7 @@ class TestAsyncRetryPolicy:
         decision, consistency = policy.on_write_timeout(
             query=mock_query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -124,7 +124,7 @@ class TestAsyncRetryPolicy:
         decision, consistency = policy.on_write_timeout(
             query=mock_query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="COUNTER",
+            write_type=WriteType.COUNTER,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -138,7 +138,7 @@ class TestAsyncRetryPolicy:
         decision, consistency = policy.on_write_timeout(
             query=mock_query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=2,
             received_responses=1,
             retry_num=3,

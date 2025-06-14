@@ -6,7 +6,7 @@ Tests all query types and edge cases to ensure retry logic is correct.
 from unittest.mock import Mock
 
 import pytest
-from cassandra.policies import RetryPolicy
+from cassandra.policies import RetryPolicy, WriteType
 from cassandra.query import BatchStatement, ConsistencyLevel, PreparedStatement, SimpleStatement
 
 from async_cassandra.retry_policy import AsyncRetryPolicy
@@ -116,7 +116,7 @@ class TestAsyncRetryPolicyComprehensive:
         decision, consistency = policy.on_write_timeout(
             query=insert_query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -131,7 +131,7 @@ class TestAsyncRetryPolicyComprehensive:
         decision, consistency = policy.on_write_timeout(
             query=insert_query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -148,7 +148,7 @@ class TestAsyncRetryPolicyComprehensive:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -166,7 +166,7 @@ class TestAsyncRetryPolicyComprehensive:
         decision, consistency = policy.on_write_timeout(
             query=query,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="SIMPLE",
+            write_type=WriteType.SIMPLE,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -181,12 +181,12 @@ class TestAsyncRetryPolicyComprehensive:
         query.is_idempotent = True
 
         write_types_and_expected = [
-            ("SIMPLE", RetryPolicy.RETRY),
-            ("BATCH", RetryPolicy.RETRY),
-            ("UNLOGGED_BATCH", RetryPolicy.RETRY),  # Now retried when idempotent
-            ("COUNTER", RetryPolicy.RETHROW),
-            ("BATCH_LOG", RetryPolicy.RETHROW),
-            ("CAS", RetryPolicy.RETHROW),  # Compare-and-set
+            (WriteType.SIMPLE, RetryPolicy.RETRY),
+            (WriteType.BATCH, RetryPolicy.RETRY),
+            (WriteType.UNLOGGED_BATCH, RetryPolicy.RETRY),  # Now retried when idempotent
+            (WriteType.COUNTER, RetryPolicy.RETHROW),
+            (WriteType.BATCH_LOG, RetryPolicy.RETHROW),
+            (WriteType.CAS, RetryPolicy.RETHROW),  # Compare-and-set
         ]
 
         for write_type, expected in write_types_and_expected:
@@ -214,7 +214,7 @@ class TestAsyncRetryPolicyComprehensive:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -228,7 +228,7 @@ class TestAsyncRetryPolicyComprehensive:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.QUORUM,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=2,
             received_responses=1,
             retry_num=0,
@@ -297,7 +297,7 @@ class TestAsyncRetryPolicyComprehensive:
             decision, consistency = policy.on_write_timeout(
                 query=query,
                 consistency=ConsistencyLevel.QUORUM,
-                write_type="SIMPLE",
+                write_type=WriteType.SIMPLE,
                 required_responses=2,
                 received_responses=1,
                 retry_num=0,

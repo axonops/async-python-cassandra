@@ -93,8 +93,68 @@ See our [comparison guide](docs/alternatives-comparison.md) for technical differ
 ## 📋 Requirements
 
 - Python 3.12 or higher
-- Apache Cassandra 5.0+ (tested with 5.0, may work with earlier versions)
+- Apache Cassandra 4.0+ (for CQL protocol v5 support)
 - cassandra-driver 3.29.2+
+- CQL Protocol v5 or higher (see below)
+
+### 🔌 CQL Protocol Version Requirement
+
+**async-cassandra requires CQL protocol v5 or higher** for all connections. We verify this requirement after connection to ensure you get the best available protocol version.
+
+```python
+# Recommended: Let driver negotiate to highest available
+cluster = AsyncCluster(['localhost'])  # Negotiates to highest (v6 if available)
+await cluster.connect()  # Fails if negotiated < v5
+
+# Explicit versions (v5+):
+cluster = AsyncCluster(['localhost'], protocol_version=5)  # Forces v5 exactly
+cluster = AsyncCluster(['localhost'], protocol_version=6)  # Forces v6 if available
+
+# This raises ConfigurationError immediately:
+cluster = AsyncCluster(['localhost'], protocol_version=4)  # ❌ Not supported
+```
+
+**Why We Enforce v5+ (and not v4 or older):**
+
+1. **Async Performance**: Protocol v5 introduced features that significantly improve async operations:
+   - Better streaming control for large result sets
+   - Improved connection management per host
+   - More efficient prepared statement handling
+
+2. **Testing & Maintenance**: Supporting older protocols would require:
+   - Testing against Cassandra 2.x/3.x (v3/v4 protocols)
+   - Handling protocol-specific quirks and limitations
+   - Maintaining compatibility code for deprecated features
+   
+3. **Security & Features**: Older protocols lack:
+   - Modern authentication mechanisms
+   - Proper error reporting for async contexts
+   - Features required for cloud-native deployments
+
+4. **Industry Standards**: 
+   - Cassandra 4.0 (with v5) was released in July 2021
+   - Major cloud providers default to v5+
+   - Cassandra 3.x reached EOL in 2023
+
+**What This Means for You:**
+
+When connecting:
+- **Cassandra 4.0+**: Automatically uses v5 or v6 (best available)
+- **Cassandra 3.x or older**: Connection fails with:
+```
+ConnectionError: Connected with protocol v4 but v5+ is required.
+Your Cassandra server only supports up to protocol v4.
+async-cassandra requires CQL protocol v5 or higher (Cassandra 4.0+).
+Please upgrade your Cassandra cluster to version 4.0 or newer.
+```
+
+**Upgrade Options:**
+- **Self-hosted**: Upgrade to Cassandra 4.0+ or 5.0
+- **AWS Keyspaces**: Already supports v5
+- **Azure Cosmos DB**: Check current documentation
+- **DataStax Astra**: Supports v5+ by default
+
+We understand this requirement may be inconvenient for some users, but it allows us to provide a better, more maintainable async experience while focusing our testing and development efforts on modern Cassandra deployments.
 
 ## 🔧 Installation
 

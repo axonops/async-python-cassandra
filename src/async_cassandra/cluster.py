@@ -110,8 +110,21 @@ class AsyncCluster(AsyncContextManageable):
             cluster_kwargs["auth_provider"] = auth_provider
         if ssl_context is not None:
             cluster_kwargs["ssl_context"] = ssl_context
+        # Handle protocol version
         if protocol_version is not None:
+            # Validate explicitly specified protocol version
+            if protocol_version < 5:
+                from .exceptions import ConfigurationError
+
+                raise ConfigurationError(
+                    f"Protocol version {protocol_version} is not supported. "
+                    "async-cassandra requires CQL protocol v5 or higher for optimal async performance. "
+                    "Protocol v5 was introduced in Cassandra 4.0 (released July 2021). "
+                    "Please upgrade your Cassandra cluster to 4.0+ or use a compatible service. "
+                    "If you're using a cloud provider, check their documentation for protocol support."
+                )
             cluster_kwargs["protocol_version"] = protocol_version
+        # else: Let driver negotiate to get the highest available version
 
         # Merge with any additional kwargs
         cluster_kwargs.update(kwargs)
@@ -173,12 +186,37 @@ class AsyncCluster(AsyncContextManageable):
                 session = await asyncio.wait_for(
                     AsyncCassandraSession.create(self._cluster, keyspace), timeout=timeout
                 )
+
+                # Verify we got protocol v5 or higher
+                negotiated_version = self._cluster.protocol_version
+                if negotiated_version < 5:
+                    await session.close()
+                    raise ConnectionError(
+                        f"Connected with protocol v{negotiated_version} but v5+ is required. "
+                        f"Your Cassandra server only supports up to protocol v{negotiated_version}. "
+                        "async-cassandra requires CQL protocol v5 or higher (Cassandra 4.0+). "
+                        "Please upgrade your Cassandra cluster to version 4.0 or newer."
+                    )
+
                 return session
 
             except asyncio.TimeoutError:
                 raise
             except Exception as e:
                 last_error = e
+
+                # Check for protocol version mismatch
+                error_str = str(e)
+                if "NoHostAvailable" in str(type(e).__name__):
+                    # Check if it's due to protocol version incompatibility
+                    if "ProtocolError" in error_str or "protocol version" in error_str.lower():
+                        # Don't retry protocol version errors - the server doesn't support v5+
+                        raise ConnectionError(
+                            "Failed to connect: Your Cassandra server doesn't support protocol v5. "
+                            "async-cassandra requires CQL protocol v5 or higher (Cassandra 4.0+). "
+                            "Please upgrade your Cassandra cluster to version 4.0 or newer."
+                        ) from e
+
                 if attempt < MAX_RETRY_ATTEMPTS - 1:
                     # Log retry attempt
                     import logging

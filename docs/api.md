@@ -43,7 +43,7 @@ AsyncCluster(
 - `reconnection_policy`: Reconnection policy
 - `retry_policy`: Retry policy (default: AsyncRetryPolicy)
 - `ssl_context`: SSL context for secure connections
-- `protocol_version`: CQL protocol version
+- `protocol_version`: CQL protocol version (must be 5 or higher if specified). If omitted, driver negotiates the highest available version. Connection fails if negotiated version < 5.
 - `executor_threads`: Number of threads for I/O operations (default: 2)
 - `max_schema_agreement_wait`: Max time to wait for schema agreement (default: 10)
 - `control_connection_timeout`: Timeout for control connection (default: 2.0)
@@ -89,8 +89,20 @@ Connect to the cluster and create a session.
 
 **Example:**
 ```python
-cluster = AsyncCluster(['localhost'])
+# Recommended: Let driver negotiate to highest available
+cluster = AsyncCluster(['localhost'])  # Negotiates to v6 if available
+session = await cluster.connect('my_keyspace')  # Fails if < v5
+
+# Explicit protocol version (must be 5+)
+cluster = AsyncCluster(['localhost'], protocol_version=5)
 session = await cluster.connect('my_keyspace')
+
+# Connection to old Cassandra will fail after negotiation
+try:
+    cluster = AsyncCluster(['cassandra-3.x-server'])
+    session = await cluster.connect()  # Negotiates v4, then fails
+except ConnectionError as e:
+    print(e)  # "Connected with protocol v4 but v5+ is required..."
 ```
 
 #### `shutdown`

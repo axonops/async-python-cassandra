@@ -113,7 +113,7 @@ cluster = AsyncCluster(
     # Thread pool settings
     executor_threads=4,  # Number of reactor threads
     # Protocol settings
-    protocol_version=4,
+    protocol_version=5,
     # Heartbeat to keep connections alive
     idle_heartbeat_interval=30.0
 )

@@ -7,7 +7,7 @@ when explicitly marked as idempotent, just like SIMPLE and BATCH operations.
 
 from unittest.mock import Mock
 
-from cassandra.policies import ConsistencyLevel, RetryPolicy
+from cassandra.policies import ConsistencyLevel, RetryPolicy, WriteType
 from cassandra.query import BatchStatement, BatchType
 
 from async_cassandra.retry_policy import AsyncRetryPolicy
@@ -30,7 +30,7 @@ class TestUnloggedBatchRetry:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="UNLOGGED_BATCH",
+            write_type=WriteType.UNLOGGED_BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -53,7 +53,7 @@ class TestUnloggedBatchRetry:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="BATCH",  # Regular logged batch
+            write_type=WriteType.BATCH,  # Regular logged batch
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -73,7 +73,7 @@ class TestUnloggedBatchRetry:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="UNLOGGED_BATCH",
+            write_type=WriteType.UNLOGGED_BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -94,7 +94,7 @@ class TestUnloggedBatchRetry:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="UNLOGGED_BATCH",
+            write_type=WriteType.UNLOGGED_BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -113,7 +113,7 @@ class TestUnloggedBatchRetry:
         decision, consistency = policy.on_write_timeout(
             query=batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="UNLOGGED_BATCH",
+            write_type=WriteType.UNLOGGED_BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=2,  # At max retries
@@ -176,7 +176,7 @@ class TestUnloggedBatchRetry:
         decision, _ = policy.on_write_timeout(
             query=logged_batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="BATCH",
+            write_type=WriteType.BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -187,7 +187,7 @@ class TestUnloggedBatchRetry:
         decision, _ = policy.on_write_timeout(
             query=unlogged_batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="UNLOGGED_BATCH",
+            write_type=WriteType.UNLOGGED_BATCH,
             required_responses=1,
             received_responses=0,
             retry_num=0,
@@ -199,7 +199,7 @@ class TestUnloggedBatchRetry:
         decision, _ = policy.on_write_timeout(
             query=counter_batch,
             consistency=ConsistencyLevel.ONE,
-            write_type="COUNTER",
+            write_type=WriteType.COUNTER,
             required_responses=1,
             received_responses=0,
             retry_num=0,

@@ -54,7 +54,7 @@ class TestConnectionMonitor:
         session._session.cluster = Mock()
         session._session.cluster.metadata = Mock()
         session._session.cluster.metadata.cluster_name = "TestCluster"
-        session._session.cluster.protocol_version = 4
+        session._session.cluster.protocol_version = 5
         session._session.cluster.metadata.all_hosts = Mock(return_value=[])
         return session
 
@@ -76,7 +76,7 @@ class TestConnectionMonitor:
 
         assert isinstance(metrics, ClusterMetrics)
         assert metrics.cluster_name == "TestCluster"
-        assert metrics.protocol_version == 4
+        assert metrics.protocol_version == 5
         assert len(metrics.hosts) == 0
         assert metrics.total_connections == 0
 

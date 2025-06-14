@@ -269,3 +269,76 @@ def verify_graceful_degradation(submit_many_concurrent_queries):
     # Even with thread pool saturation, should be < 1 second per query
     assert avg_time < 1.0
     return True
+
+
+@then("the connection should fail with protocol version error")
+def verify_protocol_version_error(connection_result):
+    """Verify connection failed with protocol version error."""
+    assert not connection_result["success"], "Connection should have failed"
+    assert connection_result["error_type"] == "ConnectionError"
+    error_msg = str(connection_result["error"])
+    assert "protocol v4 but v5+ is required" in error_msg or "protocol v5" in error_msg.lower()
+    return True
+
+
+@then(parsers.parse('the error message should mention "{text}"'))
+def verify_error_message_contains(connection_result, text):
+    """Verify error message contains specific text."""
+    assert not connection_result["success"], "Connection should have failed"
+    error_msg = str(connection_result["error"])
+    assert text in error_msg, f"Error message should contain '{text}', but was: {error_msg}"
+    return True
+
+
+@then("the connection should fail with NoHostAvailable error")
+def verify_no_host_available_error(connection_result):
+    """Verify connection failed with NoHostAvailable error."""
+    assert not connection_result["success"], "Connection should have failed"
+    error_msg = str(connection_result["error"])
+    # The error could be wrapped in ConnectionError
+    assert "NoHostAvailable" in error_msg or "protocol" in error_msg.lower()
+    return True
+
+
+@then("the error message should mention protocol incompatibility")
+def verify_protocol_incompatibility_message(connection_result):
+    """Verify error message mentions protocol incompatibility."""
+    assert not connection_result["success"], "Connection should have failed"
+    error_msg = str(connection_result["error"])
+    # Check for various protocol-related error messages
+    protocol_keywords = ["protocol", "version", "v5", "Cassandra 4.0"]
+    assert any(keyword in error_msg for keyword in protocol_keywords), f"Error message should mention protocol incompatibility, but was: {error_msg}"
+    return True
+
+
+@then("I should get a ConfigurationError immediately")
+def verify_configuration_error(cluster_creation_result):
+    """Verify cluster creation failed with ConfigurationError."""
+    assert not cluster_creation_result["success"], "Cluster creation should have failed"
+    assert cluster_creation_result["error_type"] == "ConfigurationError"
+    return True
+
+
+@then("the connection should succeed")
+def verify_connection_success(connection_result):
+    """Verify connection succeeded."""
+    assert connection_result["success"], f"Connection should have succeeded but failed with: {connection_result.get('error')}"
+    return True
+
+
+@then(parsers.parse("the negotiated protocol version should be {version:d} or higher"))
+def verify_protocol_version_min(connection_result, version):
+    """Verify negotiated protocol version is at least the specified version."""
+    assert connection_result["success"], "Connection should have succeeded"
+    actual_version = connection_result["protocol_version"]
+    assert actual_version >= version, f"Protocol version should be {version} or higher, but was {actual_version}"
+    return True
+
+
+@then(parsers.parse("the negotiated protocol version should be exactly {version:d}"))
+def verify_protocol_version_exact(connection_result, version):
+    """Verify negotiated protocol version is exactly the specified version."""
+    assert connection_result["success"], "Connection should have succeeded"
+    actual_version = connection_result["protocol_version"]
+    assert actual_version == version, f"Protocol version should be exactly {version}, but was {actual_version}"
+    return True
