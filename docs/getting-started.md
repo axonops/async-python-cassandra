@@ -58,134 +58,11 @@ asyncio.run(main())
 
 ### Using Context Managers (Recommended)
 
-#### What are Context Managers?
+Context managers ensure that resources are properly cleaned up after use, even if errors occur. When you use `async with`, Python guarantees that cleanup code runs no matter what happens.
 
-Context managers are Python's way of ensuring that resources are properly cleaned up after use. When you use `async with`, Python guarantees that cleanup code runs even if an error occurs. Think of it like a try/finally block but cleaner.
+**Why this matters**: async-cassandra's streaming operations can leak memory if not properly closed due to circular references in the callback system. Context managers prevent this.
 
-#### How Context Managers Actually Work
-
-When you write `async with`, Python calls special methods on the object:
-
-```mermaid
-sequenceDiagram
-    participant Code as Your Code
-    participant CM as Context Manager
-    participant Resource as Resource/Memory
-    
-    Code->>CM: async with obj as result:
-    CM->>CM: __aenter__() called
-    CM->>Resource: Acquire resource
-    CM-->>Code: Returns result
-    
-    alt Normal execution
-        Code->>Code: Process data...
-        Code->>CM: End of with block
-    else Exception occurs
-        Code->>Code: 💥 Exception!
-        Code->>CM: Exception propagates
-    else Early exit (break/return)
-        Code->>Code: break/return
-        Code->>CM: Exit with block
-    end
-    
-    Note over CM: __aexit__() ALWAYS called
-    CM->>Resource: Clean up (close connections, free memory)
-    CM->>Code: Re-raise exception (if any)
-```
-
-```python
-# What you write:
-async with await session.execute_stream(query) as result:
-    async for row in result:
-        process(row)
-
-# What Python actually does behind the scenes:
-result = await session.execute_stream(query)
-await result.__aenter__()  # Called when entering the 'with' block
-try:
-    async for row in result:
-        process(row)
-finally:
-    await result.__aexit__(exc_type, exc_val, exc_tb)  # ALWAYS called, even on error!
-```
-
-#### The Actual Cleanup Code in async-cassandra
-
-Here's what happens inside async-cassandra's streaming result:
-
-```python
-# From src/async_cassandra/streaming.py:
-class AsyncStreamingResultSet:
-    async def __aenter__(self):
-        """Enter the context manager."""
-        return self  # Return self so you can use it
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager - THIS ALWAYS RUNS!"""
-        await self.close()  # Clean up resources
-        return None  # Don't suppress exceptions
-    
-    async def close(self):
-        """The actual cleanup that prevents memory leaks."""
-        self._closed = True
-        self._exhausted = True
-        
-        # This is the critical part - breaks circular references:
-        self._cleanup_callbacks()  # Removes callbacks from driver
-        
-        # Clear data to free memory
-        self._current_page = []
-        self._current_index = 0
-```
-
-The key insight: `__aexit__` is **guaranteed** to run even if:
-- An exception occurs during iteration
-- You break out of the loop early
-- The coroutine is cancelled
-- Any other error happens
-
-This is why context managers are so powerful for resource management!
-
-#### Context Manager in Action - Error Scenarios
-
-Here are examples showing how context managers handle different error cases:
-
-```python
-# Scenario 1: Exception during processing
-async with await session.execute_stream(query) as result:
-    async for row in result:
-        if row.id == "bad_id":
-            raise ValueError("Bad data!")  # Exception!
-        process(row)
-# ✅ result.close() still gets called via __aexit__!
-
-# Scenario 2: Breaking out early
-async with await session.execute_stream(query) as result:
-    count = 0
-    async for row in result:
-        process(row)
-        count += 1
-        if count >= 100:
-            break  # Early exit
-# ✅ result.close() still gets called!
-
-# Scenario 3: Timeout/Cancellation
-try:
-    async with await session.execute_stream(query) as result:
-        async for row in result:
-            await asyncio.sleep(1)  # Slow processing
-            process(row)
-except asyncio.CancelledError:
-    print("Operation cancelled!")
-# ✅ result.close() was still called before the exception propagated!
-
-# What happens WITHOUT context manager:
-result = await session.execute_stream(query)
-async for row in result:
-    if row.id == "bad_id":
-        raise ValueError("Bad data!")  # Exception!
-# ❌ result.close() NEVER gets called - MEMORY LEAK!
-```
+> 📖 **Want to understand how context managers work?** See our [detailed explanation of context managers](context-managers-explained.md) to learn what happens behind the scenes.
 
 **Without context manager (manual cleanup):**
 ```python
@@ -405,6 +282,8 @@ async for row in result:
 #### Why This Happens
 
 The streaming implementation uses callbacks to coordinate with the Cassandra driver. These callbacks create circular references that Python's garbage collector cannot clean up automatically. Without explicit cleanup via `close()` or a context manager, these references persist indefinitely, causing memory leaks.
+
+> 📖 **Learn more**: For a detailed explanation of how context managers prevent these memory leaks, see [Understanding Context Managers](context-managers-explained.md).
 
 #### When to Use Streaming
 

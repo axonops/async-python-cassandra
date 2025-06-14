@@ -211,6 +211,7 @@ We welcome contributions! Please see:
 - [Getting Started Guide](docs/getting-started.md) - **Start here!**
 - [API Reference](docs/api.md) - Detailed API documentation
 - [Troubleshooting Guide](docs/troubleshooting.md) - Common issues and solutions
+- [Understanding Context Managers](docs/context-managers-explained.md) - Deep dive into Python context managers
 
 ### Advanced Topics
 - [Architecture Overview](docs/architecture.md) - Technical deep dive

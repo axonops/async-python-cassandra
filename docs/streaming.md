@@ -309,6 +309,8 @@ AsyncStreamingResultSet ←→ Callbacks ←→ ResponseFuture
 
 Without explicit cleanup, Python's garbage collector cannot break this cycle, causing both the result set and any data it holds to remain in memory indefinitely.
 
+> 📖 **Deep Dive**: For a comprehensive explanation of how context managers solve this problem and why they're guaranteed to work, see [Understanding Context Managers](context-managers-explained.md).
+
 ## Basic Usage
 
 ### Simple Row-by-Row Processing (WITH PROPER CLEANUP)
