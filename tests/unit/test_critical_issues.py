@@ -184,9 +184,26 @@ class TestStreamingMemoryLeaks:
 
         mock_future = Mock()
         mock_future.has_more_pages = True
+        mock_future._final_exception = None  # Important: must be None
 
         page_count = 0
         handler = None  # Define handler first
+        callbacks = {}
+
+        def add_callbacks(callback=None, errback=None):
+            callbacks["callback"] = callback
+            callbacks["errback"] = errback
+            # Simulate initial page callback from a thread
+            if callback:
+                import threading
+
+                def thread_callback():
+                    first_page = [f"row_0_{i}" for i in range(100)]
+                    pages_created.append(first_page)
+                    callback(first_page)
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
 
         def mock_fetch_next():
             nonlocal page_count
@@ -197,23 +214,31 @@ class TestStreamingMemoryLeaks:
                 page = [f"row_{page_count}_{i}" for i in range(100)]
                 pages_created.append(page)
 
-                # Simulate callback
-                if handler:
-                    handler._handle_page(page)
+                # Simulate callback from thread
+                if callbacks.get("callback"):
+                    import threading
+
+                    def thread_callback():
+                        callbacks["callback"](page)
+
+                    thread = threading.Thread(target=thread_callback)
+                    thread.start()
                 mock_future.has_more_pages = page_count < 5
             else:
-                if handler:
-                    handler._handle_page([])
+                if callbacks.get("callback"):
+                    import threading
+
+                    def thread_callback():
+                        callbacks["callback"]([])
+
+                    thread = threading.Thread(target=thread_callback)
+                    thread.start()
                 mock_future.has_more_pages = False
 
         mock_future.start_fetching_next_page = mock_fetch_next
-        mock_future.add_callbacks = Mock()
+        mock_future.add_callbacks = add_callbacks
 
         handler = AsyncStreamingResultSet(mock_future)
-
-        # Simulate first page callback
-        first_page = [f"row_0_{i}" for i in range(100)]
-        handler._handle_page(first_page)
 
         async def consume_all():
             consumed = 0
@@ -229,7 +254,7 @@ class TestStreamingMemoryLeaks:
         assert len(handler._current_page) <= 100, "Handler should only hold one page"
 
         # Verify pages were replaced, not accumulated
-        assert len(pages_created) == 5  # 5 pages from mock_fetch_next
+        assert len(pages_created) == 6  # 1 initial page + 5 pages from mock_fetch_next
 
     def test_callback_reference_cycles(self):
         """

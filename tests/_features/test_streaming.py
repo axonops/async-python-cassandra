@@ -42,7 +42,7 @@ class TestStreamingCore:
                 # Call from a thread like the actual driver does
                 def thread_callback():
                     callback([1, 2, 3])
-                
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -76,8 +76,10 @@ class TestStreamingCore:
             # Simulate first page callback
             if callback and page_count == 0:
                 page_count += 1
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -85,8 +87,10 @@ class TestStreamingCore:
             # Simulate fetching next page
             mock_result_set.has_more_pages = False
             if callbacks["callback"]:
+
                 def thread_callback():
                     callbacks["callback"]([4, 5, 6])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -120,8 +124,10 @@ class TestStreamingCore:
             # Simulate first page callback
             if callback and page_count == 0:
                 page_count += 1
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -129,8 +135,10 @@ class TestStreamingCore:
             # Simulate fetching next page
             mock_result_set.has_more_pages = False
             if callbacks["callback"]:
+
                 def thread_callback():
                     callbacks["callback"]([4, 5, 6])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -163,16 +171,20 @@ class TestStreamingCore:
             # Simulate first page callback
             if callback and page_count == 0:
                 page_count += 1
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
         def start_fetching():
             # Simulate error on next page
             if callbacks["errback"]:
+
                 def thread_errback():
                     callbacks["errback"](InvalidRequest("Query error"))
+
                 thread = threading.Thread(target=thread_errback)
                 thread.start()
 
@@ -198,8 +210,10 @@ class TestStreamingCore:
 
         def add_callbacks(callback=None, errback=None):
             if callback:
+
                 def thread_callback():
                     callback(list(range(100)))
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -221,7 +235,7 @@ class TestStreamingCore:
         """Test creating streaming statements."""
         # Basic statement
         stmt = create_streaming_statement("SELECT * FROM users")
-        assert stmt.query == "SELECT * FROM users"
+        assert stmt.query_string == "SELECT * FROM users"
         assert stmt.fetch_size == 1000
 
         # Custom fetch size
@@ -299,8 +313,10 @@ class TestStreamingMemoryManagement:
 
         def add_callbacks(callback=None, errback=None):
             if callback:
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -352,8 +368,10 @@ class TestStreamingMemoryManagement:
 
         def add_callbacks(callback=None, errback=None):
             if callback:
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -388,8 +406,10 @@ class TestStreamingMemoryManagement:
             callbacks["callback"] = callback
             # First page
             if callback:
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -399,10 +419,12 @@ class TestStreamingMemoryManagement:
             if fetch_count < 5:
                 mock_result_set.has_more_pages = True
                 if callbacks["callback"]:
+
                     def thread_callback():
                         callbacks["callback"](
                             [fetch_count * 3 + 1, fetch_count * 3 + 2, fetch_count * 3 + 3]
                         )
+
                     thread = threading.Thread(target=thread_callback)
                     thread.start()
             else:
@@ -430,8 +452,10 @@ class TestStreamingMemoryManagement:
 
         def add_callbacks(callback=None, errback=None):
             if callback:
+
                 def thread_callback():
                     callback([1, 2, 3])
+
                 thread = threading.Thread(target=thread_callback)
                 thread.start()
 
@@ -480,8 +504,13 @@ class TestStreamingResultHandler:
 
         def add_callbacks(callback=None, errback=None):
             if errback:
+                # Call the errback after a short delay to let the async iteration start
                 def thread_errback():
+                    import time
+
+                    time.sleep(0.01)  # Small delay to ensure iteration starts
                     errback(error)
+
                 thread = threading.Thread(target=thread_errback)
                 thread.start()
 
@@ -489,6 +518,10 @@ class TestStreamingResultHandler:
 
         handler = StreamingResultHandler(mock_future)
         result = await handler.get_streaming_result()
+
+        # Set up the event loop and page_ready event
+        result._loop = asyncio.get_running_loop()
+        result._page_ready = asyncio.Event()
 
         with pytest.raises(InvalidRequest, match="Streaming error"):
             async for row in result:

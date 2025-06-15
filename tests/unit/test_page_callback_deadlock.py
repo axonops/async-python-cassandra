@@ -33,6 +33,7 @@ class TestPageCallbackDeadlock:
         # Create streaming result set with callback
         response_future = Mock()
         response_future.has_more_pages = False
+        response_future._final_exception = None
         response_future.add_callbacks = Mock()
 
         config = StreamConfig(page_callback=page_callback)
@@ -59,15 +60,21 @@ class TestPageCallbackDeadlock:
         # Create streaming result set
         response_future = Mock()
         response_future.has_more_pages = False
+        response_future._final_exception = None
         response_future.add_callbacks = Mock()
 
         config = StreamConfig(page_callback=bad_callback)
         result_set = AsyncStreamingResultSet(response_future, config)
 
-        # Trigger page with bad callback
+        # Trigger page with bad callback from a thread
         args = response_future.add_callbacks.call_args
         page_handler = args[1]["callback"]
-        page_handler(["row1", "row2"])
+
+        def thread_callback():
+            page_handler(["row1", "row2"])
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
 
         # Should still be able to iterate results despite callback error
         rows = []
@@ -90,15 +97,21 @@ class TestPageCallbackDeadlock:
         # Create streaming result set
         response_future = Mock()
         response_future.has_more_pages = False
+        response_future._final_exception = None
         response_future.add_callbacks = Mock()
 
         config = StreamConfig(page_callback=slow_callback)
         result_set = AsyncStreamingResultSet(response_future, config)
 
-        # Trigger page
+        # Trigger page from a thread
         args = response_future.add_callbacks.call_args
         page_handler = args[1]["callback"]
-        page_handler(["row1", "row2"])
+
+        def thread_callback():
+            page_handler(["row1", "row2"])
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
 
         # Start iteration immediately
         iteration_start_time = time.time()
@@ -124,6 +137,7 @@ class TestPageCallbackDeadlock:
         # Create streaming result set
         response_future = Mock()
         response_future.has_more_pages = True
+        response_future._final_exception = None
         response_future.add_callbacks = Mock()
         response_future.start_fetching_next_page = Mock()
 
@@ -151,16 +165,24 @@ class TestPageCallbackDeadlock:
         # Create streaming result set without callback
         response_future = Mock()
         response_future.has_more_pages = False
+        response_future._final_exception = None
         response_future.add_callbacks = Mock()
 
         result_set = AsyncStreamingResultSet(response_future)
 
-        # Trigger page
+        # Trigger page from a thread
         args = response_future.add_callbacks.call_args
         page_handler = args[1]["callback"]
 
+        rows = ["row" + str(i) for i in range(1000)]
         start_time = time.time()
-        page_handler(["row" + str(i) for i in range(1000)])
+
+        def thread_callback():
+            page_handler(rows)
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
+        thread.join()  # Wait for thread to complete
         handle_time = time.time() - start_time
 
         # Should be very fast without callback

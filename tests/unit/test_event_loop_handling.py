@@ -80,6 +80,7 @@ class TestEventLoopHandling:
         # Create streaming result set
         response_future = Mock()
         response_future.has_more_pages = False
+        response_future._final_exception = None  # Important: must be None
         response_future.add_callbacks = Mock()
 
         result_set = AsyncStreamingResultSet(response_future)
@@ -87,10 +88,17 @@ class TestEventLoopHandling:
         # Page ready event should not exist yet
         assert result_set._page_ready is None
 
-        # Trigger callback
+        # Trigger callback from a thread (like the real driver)
         args = response_future.add_callbacks.call_args
         callback = args[1]["callback"]
-        callback(["row1", "row2"])
+
+        import threading
+
+        def thread_callback():
+            callback(["row1", "row2"])
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
 
         # Start iteration - this should create the event
         rows = []

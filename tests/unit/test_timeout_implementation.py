@@ -137,12 +137,18 @@ class TestStreamingTimeouts:
     @pytest.mark.asyncio
     async def test_streaming_with_timeout_config(self, mock_response_future):
         """Test that streaming respects timeout in config."""
+        # Mock has_more_pages to be True
+        mock_response_future.has_more_pages = True
+        mock_response_future._final_exception = None
+
+        # Mock add_callbacks to do nothing
+        mock_response_future.add_callbacks = Mock()
+
+        # Mock start_fetching_next_page to do nothing (no callback will be called)
+        mock_response_future.start_fetching_next_page = Mock()
+
         config = StreamConfig(timeout_seconds=0.1)
         stream = AsyncStreamingResultSet(mock_response_future, config)
-
-        # Create page ready event but never set it
-        stream._page_ready = asyncio.Event()
-        stream._loop = asyncio.get_running_loop()
 
         # Should timeout waiting for page
         with pytest.raises(asyncio.TimeoutError):

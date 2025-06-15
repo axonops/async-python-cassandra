@@ -364,18 +364,19 @@ class TestMonitoringIntegration:
     @pytest.mark.critical
     async def test_monitoring_with_session(self):
         """Test monitoring integration with AsyncSession."""
-        mock_session = Mock()
+        # Create the cassandra session mock
+        mock_cassandra_session = Mock()
         mock_cluster = Mock()
-        mock_session._session = Mock()
-        mock_session._session.cluster = mock_cluster
+        mock_cassandra_session.cluster = mock_cluster
 
         # Set up async session with monitoring
-        async_session = AsyncSession(mock_session)
+        async_session = AsyncSession(mock_cassandra_session)
         monitor = ConnectionMonitor(async_session)
 
         # Mock metadata for connection summary
         mock_metadata = Mock()
-        mock_metadata.all_hosts.return_value = []
+        # all_hosts() should return a list, not be a Mock
+        mock_metadata.all_hosts = Mock(return_value=[])
         mock_cluster.metadata = mock_metadata
         mock_cluster.protocol_version = 5
 

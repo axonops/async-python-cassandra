@@ -25,6 +25,7 @@ class TestAsyncStreamingResultSet:
         """Create a mock ResponseFuture."""
         future = Mock(spec=ResponseFuture)
         future.has_more_pages = True
+        future._final_exception = None
         future.add_callbacks = Mock()
         future.start_fetching_next_page = Mock()
         return future
@@ -36,9 +37,19 @@ class TestAsyncStreamingResultSet:
 
         result_set = AsyncStreamingResultSet(mock_response_future)
 
-        # Simulate page callback
+        # Get callback from add_callbacks
+        args = mock_response_future.add_callbacks.call_args
+        callback = args[1]["callback"]
+
+        # Simulate page callback from a thread
         test_rows = [{"id": 1}, {"id": 2}, {"id": 3}]
-        result_set._handle_page(test_rows)
+        import threading
+
+        def thread_callback():
+            callback(test_rows)
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
 
         # Iterate through results
         collected = []
@@ -54,21 +65,37 @@ class TestAsyncStreamingResultSet:
         """Test iterating through multiple pages."""
         result_set = AsyncStreamingResultSet(mock_response_future)
 
+        # Get callbacks
+        args = mock_response_future.add_callbacks.call_args
+        callback = args[1]["callback"]
+
         # Track pages fetched
         pages_fetched = []
 
         def mock_start_fetching():
             pages_fetched.append(True)
-            # Simulate async callback
+            # Simulate async callback from thread
             if len(pages_fetched) == 1:
                 # Second page
-                result_set._handle_page([{"id": 4}, {"id": 5}])
-                mock_response_future.has_more_pages = False
+                import threading
+
+                def thread_callback():
+                    callback([{"id": 4}, {"id": 5}])
+                    mock_response_future.has_more_pages = False
+
+                thread = threading.Thread(target=thread_callback)
+                thread.start()
 
         mock_response_future.start_fetching_next_page = mock_start_fetching
 
-        # First page
-        result_set._handle_page([{"id": 1}, {"id": 2}, {"id": 3}])
+        # First page from thread
+        import threading
+
+        def first_page_callback():
+            callback([{"id": 1}, {"id": 2}, {"id": 3}])
+
+        thread = threading.Thread(target=first_page_callback)
+        thread.start()
 
         # Iterate through all results
         collected = []

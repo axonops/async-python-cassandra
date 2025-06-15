@@ -77,21 +77,31 @@ class TestStreamingMemoryManagement:
         async with stream:
             assert stream._closed  # Still closed
 
-        # Cleanup should only be called once
-        response_future.clear_callbacks.assert_called_once()
+        # Cleanup should be called twice (once per context manager exit)
+        assert response_future.clear_callbacks.call_count == 2
 
     @pytest.mark.asyncio
     async def test_exception_in_iteration_cleans_up(self):
         """Test that exceptions during iteration still clean up properly."""
         response_future = Mock()
-        response_future.has_more_pages = True
+        response_future.has_more_pages = False
+        response_future._final_exception = None
         response_future.clear_callbacks = Mock()
+        response_future.add_callbacks = Mock()
 
         stream = AsyncStreamingResultSet(response_future)
 
-        # Mock page data
-        stream._handle_page([1, 2, 3])
-        stream._first_page_ready = True
+        # Set up callbacks to provide data
+        args = response_future.add_callbacks.call_args
+        callback = args[1]["callback"]
+
+        import threading
+
+        def thread_callback():
+            callback([1, 2, 3])
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
 
         class TestError(Exception):
             pass
@@ -114,16 +124,24 @@ class TestStreamingMemoryManagement:
 
         response_future = Mock()
         response_future.has_more_pages = True
+        response_future._final_exception = None
+        response_future.add_callbacks = Mock()
         response_future.start_fetching_next_page = Mock()
 
         stream = AsyncStreamingResultSet(response_future, config)
 
-        # Simulate receiving multiple pages
-        stream._handle_page([1, 2, 3])  # Page 1
-        assert not stream._exhausted
+        # Get the callbacks
+        args = response_future.add_callbacks.call_args
+        callback = args[1]["callback"]
 
-        stream._handle_page([4, 5, 6])  # Page 2 - should hit limit
+        # Simulate receiving multiple pages through the callback
+        callback([1, 2, 3])  # Page 1
+        assert not stream._exhausted
+        assert stream._page_number == 1
+
+        callback([4, 5, 6])  # Page 2 - should hit limit
         assert stream._exhausted  # Should be exhausted after max_pages
+        assert stream._page_number == 2
 
     @pytest.mark.asyncio
     async def test_timeout_cleanup(self):
@@ -178,13 +196,25 @@ class TestStreamingMemoryManagement:
     async def test_concurrent_close_and_iteration(self):
         """Test that concurrent close and iteration is handled safely."""
         response_future = Mock()
-        response_future.has_more_pages = True
+        response_future.has_more_pages = False
+        response_future._final_exception = None
         response_future.clear_callbacks = Mock()
+        response_future.add_callbacks = Mock()
         response_future.start_fetching_next_page = Mock()
 
         stream = AsyncStreamingResultSet(response_future)
-        stream._handle_page([1, 2, 3, 4, 5])
-        stream._first_page_ready = True
+
+        # Set up callbacks to provide data
+        args = response_future.add_callbacks.call_args
+        callback = args[1]["callback"]
+
+        import threading
+
+        def thread_callback():
+            callback([1, 2, 3, 4, 5])
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
 
         # Track iterations
         iterations = []

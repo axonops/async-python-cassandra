@@ -51,32 +51,46 @@ class TestStreamingMemoryLeak:
         # Mock ResponseFuture
         response_future = Mock()
         response_future.has_more_pages = True
+        response_future._final_exception = None
         response_future.add_callbacks = Mock()
 
         # Create streaming result set
         config = StreamConfig(fetch_size=50)
         result_set = AsyncStreamingResultSet(response_future, config)
 
-        # Add first page of data
+        # Add first page of data from a thread
         first_page = ["row" + str(i) for i in range(50)]
         args = response_future.add_callbacks.call_args
         callback = args[1]["callback"]
-        callback(first_page)
+        errback = args[1]["errback"]
+
+        import threading
+
+        def thread_callback():
+            callback(first_page)
+
+        thread = threading.Thread(target=thread_callback)
+        thread.start()
+        thread.join()
 
         # Start iterating
         rows_read = 0
         try:
             async for row in result_set:
                 rows_read += 1
-                # After reading 10 rows, simulate an error
+                # After reading 10 rows, simulate an error from a thread
                 if rows_read == 10:
-                    errback = args[1]["errback"]
-                    errback(Exception("Network error"))
+
+                    def thread_errback():
+                        errback(Exception("Network error"))
+
+                    thread = threading.Thread(target=thread_errback)
+                    thread.start()
         except Exception:
             pass
 
         # Verify cleanup happened
-        assert result_set._current_page == []
+        assert result_set._current_page == []  # Error handler should clear the page
         assert result_set._error is not None
         assert rows_read == 10  # Should have read exactly 10 rows before error
 
