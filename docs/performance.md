@@ -10,54 +10,36 @@ This guide provides insights into the performance characteristics of async-cassa
 - [Common Pitfalls](#common-pitfalls)
 - [Monitoring](#monitoring)
 
-## Performance Benefits
+## Understanding Performance
 
-### Thread Pool Elimination
+### What async-cassandra Does (and Doesn't Do)
 
-The traditional Cassandra driver uses a thread pool for I/O operations:
+**Important**: async-cassandra does NOT eliminate the Cassandra driver's thread pool or provide raw performance improvements. Instead, it:
 
-```mermaid
-graph LR
-    subgraph "Traditional Driver"
-        A[Request 1] --> T1[Thread 1]
-        B[Request 2] --> T2[Thread 2]
-        C[Request 3] --> T3[Thread 3]
-        D[Request 4] --> W[Waiting...]
-        
-        T1 --> DB[(Cassandra)]
-        T2 --> DB
-        T3 --> DB
-    end
-    
-    Note[Thread pool size limits concurrency]
-```
+✅ **Prevents event loop blocking** - Your web server stays responsive
+✅ **Enables async/await syntax** - Clean integration with async frameworks
+✅ **Allows concurrent operations** - Via the event loop, not more threads
 
-async-cassandra uses the event loop instead:
+❌ **Does NOT eliminate threads** - The driver still uses its thread pool internally
+❌ **Does NOT speed up queries** - Same underlying driver performance
+❌ **Does NOT reduce resource usage** - May actually use slightly more due to the wrapper layer
+
+### How It Works
+
+The Cassandra driver uses blocking I/O with a thread pool:
 
 ```mermaid
 graph LR
-    subgraph "async-cassandra"
-        A[Request 1] --> EL[Event Loop]
-        B[Request 2] --> EL
-        C[Request 3] --> EL
-        D[Request 4] --> EL
-        
-        EL --> DB[(Cassandra)]
+    subgraph "Your Async App"
+        A[await query] --> W[async-cassandra]
+        W --> TP[Thread Pool]
+        TP --> DB[(Cassandra)]
     end
     
-    Note[No thread pool bottleneck]
+    Note[async-cassandra bridges async ↔ thread pool]
 ```
 
-### Resource Efficiency
-
-async-cassandra eliminates the thread pool bottleneck by using the event loop for I/O operations. This typically results in:
-
-- **Fewer threads**: Only the main thread and event loop threads are needed
-- **Lower memory usage**: No thread pool overhead
-- **Reduced context switching**: Cooperative multitasking via async/await
-- **Better CPU utilization**: Less time spent in thread management
-
-The actual resource savings will depend on your workload and concurrency levels.
+The key benefit is that while the thread pool handles the blocking I/O, your event loop remains free to handle other requests. This is crucial for web applications where a blocked event loop means no requests can be processed.
 
 ## Benchmarking Your Application
 
@@ -281,12 +263,10 @@ for user_id in user_ids:
 ❌ **Bad:**
 ```python
 users = []
-# Missing prepared statement - will fail!
 for user_id in user_ids:
-    # This will raise an error - must prepare first!
-    result = await session.execute(
-        "SELECT * FROM users WHERE id = ?", [user_id]
-    )
+    # Sequential - only one query at a time
+    stmt = await session.prepare("SELECT * FROM users WHERE id = ?")
+    result = await session.execute(stmt, [user_id])
     users.append(result.one())
 ```
 
@@ -426,7 +406,7 @@ async def monitored_execute(session, query, parameters=None):
 ## Performance Checklist
 
 - [ ] Use prepared statements for repeated queries
-- [ ] Batch related writes when possible
+- [ ] Use batches ONLY for same-partition writes or atomicity (not for performance!)
 - [ ] Leverage concurrent operations with asyncio.gather()
 - [ ] Configure appropriate connection pool settings
 - [ ] Use token-aware load balancing

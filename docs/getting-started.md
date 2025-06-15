@@ -457,11 +457,10 @@ CQL (Cassandra Query Language) protocol versions define how clients communicate 
 ```python
 # Option 1: Automatic negotiation (RECOMMENDED)
 # Driver negotiates to highest available version
-cluster = AsyncCluster(['localhost'])  # Gets v6 if available, v5 if not
+cluster = AsyncCluster(['localhost'])  # Gets v5 (highest currently available)
 
-# Option 2: Explicitly specify v5 or higher
+# Option 2: Explicitly specify v5
 cluster = AsyncCluster(['localhost'], protocol_version=5)  # Forces v5 exactly
-cluster = AsyncCluster(['localhost'], protocol_version=6)  # Forces v6 (if supported)
 
 # ❌ This will raise ConfigurationError
 cluster = AsyncCluster(['localhost'], protocol_version=4)
@@ -469,9 +468,11 @@ cluster = AsyncCluster(['localhost'], protocol_version=4)
 ```
 
 **Important**: async-cassandra verifies protocol v5+ **after connection**:
-- Allows using the highest available version (v6 if supported)
+- Driver negotiates to the highest available version (currently v5)
 - Fails with clear error if server only supports v4 or lower
-- Best of both worlds: maximum performance + version enforcement
+- Ensures compatibility with modern Cassandra features
+
+> **Note**: As of January 2025, Cassandra supports protocol versions up to v5. Protocol v5 is considered stable and is the recommended version for production use.
 
 ### Upgrading from Older Cassandra
 

@@ -195,7 +195,7 @@ For more detailed examples, see our [Getting Started Guide](docs/getting-started
 
 We welcome contributions! Please see:
 - [Contributing Guidelines](CONTRIBUTING.md) - How to contribute
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) - Development setup, testing, and CI/CD
+- [Developer Documentation](developerdocs/) - Development setup, testing, and architecture
 
 **Important**: All contributors must sign our [Contributor License Agreement (CLA)](CLA.md) before their pull request can be merged.
 

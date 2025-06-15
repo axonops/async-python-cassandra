@@ -66,7 +66,7 @@ Please follow these steps to have your contribution considered by the maintainer
 
 ## Development Setup
 
-For detailed development instructions, see our [Developer Guide](docs/DEVELOPER_GUIDE.md).
+For detailed development instructions, see our [Developer Documentation](developerdocs/).
 
 Here's how to set up `async-python-cassandra` for local development:
 
