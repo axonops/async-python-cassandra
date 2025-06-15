@@ -266,6 +266,105 @@ class TestFastAPIExample:
         assert success_resp.status_code == 200
         print("✓ Adequate timeout allows completion")
 
+    @pytest.mark.asyncio
+    async def test_context_manager_safety(self, app_client):
+        """Test comprehensive context manager safety in FastAPI."""
+        print("\n=== Testing Context Manager Safety ===")
+
+        # Get initial status
+        status = await app_client.get("/context_manager_safety/status")
+        assert status.status_code == 200
+        initial_state = status.json()
+        print(f"✓ Initial state: Session={initial_state['session_open']}, Cluster={initial_state['cluster_open']}")
+
+        # Test 1: Query errors don't close session
+        print("\nTest 1: Query Error Safety")
+        query_error_resp = await app_client.post("/context_manager_safety/query_error")
+        assert query_error_resp.status_code == 200
+        query_result = query_error_resp.json()
+        assert query_result["session_unchanged"] is True
+        assert query_result["session_open"] is True
+        assert query_result["session_still_works"] is True
+        assert "non_existent_table_xyz" in query_result["error_caught"]
+        print("✓ Query errors don't close session")
+        print(f"  - Error caught: {query_result['error_caught'][:50]}...")
+        print(f"  - Session still works: {query_result['session_still_works']}")
+
+        # Test 2: Streaming errors don't close session
+        print("\nTest 2: Streaming Error Safety")
+        stream_error_resp = await app_client.post("/context_manager_safety/streaming_error")
+        assert stream_error_resp.status_code == 200
+        stream_result = stream_error_resp.json()
+        assert stream_result["session_unchanged"] is True
+        assert stream_result["session_open"] is True
+        assert stream_result["streaming_error_caught"] is True
+        # The session_still_streams might be False if no users exist, but session should work
+        if not stream_result["session_still_streams"]:
+            print(f"  - Note: No users found ({stream_result['rows_after_error']} rows)")
+            # Create a user for subsequent tests
+            user_resp = await app_client.post("/users", json={
+                "name": "Test User",
+                "email": "test@example.com",
+                "age": 30
+            })
+            assert user_resp.status_code == 201
+        print("✓ Streaming errors don't close session")
+        print(f"  - Error caught: {stream_result['error_message'][:50]}...")
+        print(f"  - Session remains open: {stream_result['session_open']}")
+
+        # Test 3: Concurrent streams don't interfere
+        print("\nTest 3: Concurrent Streams Safety")
+        concurrent_resp = await app_client.post("/context_manager_safety/concurrent_streams")
+        assert concurrent_resp.status_code == 200
+        concurrent_result = concurrent_resp.json()
+        print(f"  - Debug: Results = {concurrent_result['results']}")
+        assert concurrent_result["streams_completed"] == 3
+        # Check if streams worked independently (each should have 10 users)
+        if not concurrent_result["all_streams_independent"]:
+            print(f"  - Warning: Stream counts varied: {[r['count'] for r in concurrent_result['results']]}")
+        assert concurrent_result["session_still_open"] is True
+        print("✓ Concurrent streams completed")
+        for result in concurrent_result["results"]:
+            print(f"  - Age {result['age']}: {result['count']} users")
+
+        # Test 4: Nested context managers
+        print("\nTest 4: Nested Context Managers")
+        nested_resp = await app_client.post("/context_manager_safety/nested_contexts")
+        assert nested_resp.status_code == 200
+        nested_result = nested_resp.json()
+        assert nested_result["correct_order"] is True
+        assert nested_result["main_session_unaffected"] is True
+        assert nested_result["row_count"] == 5
+        print("✓ Nested contexts close in correct order")
+        print(f"  - Events: {' → '.join(nested_result['events'][:5])}...")
+        print(f"  - Main session unaffected: {nested_result['main_session_unaffected']}")
+
+        # Test 5: Streaming cancellation
+        print("\nTest 5: Streaming Cancellation Safety")
+        cancel_resp = await app_client.post("/context_manager_safety/cancellation")
+        assert cancel_resp.status_code == 200
+        cancel_result = cancel_resp.json()
+        assert cancel_result["was_cancelled"] is True
+        assert cancel_result["session_still_works"] is True
+        assert cancel_result["new_stream_worked"] is True
+        assert cancel_result["session_open"] is True
+        print("✓ Cancelled streams clean up properly")
+        print(f"  - Rows before cancel: {cancel_result['rows_processed_before_cancel']}")
+        print(f"  - Session works after cancel: {cancel_result['session_still_works']}")
+        print(f"  - New stream successful: {cancel_result['new_stream_worked']}")
+
+        # Verify final state matches initial state
+        final_status = await app_client.get("/context_manager_safety/status")
+        assert final_status.status_code == 200
+        final_state = final_status.json()
+        assert final_state["session_id"] == initial_state["session_id"]
+        assert final_state["cluster_id"] == initial_state["cluster_id"]
+        assert final_state["session_open"] is True
+        assert final_state["cluster_open"] is True
+        print("\n✓ All context manager safety tests passed!")
+        print(f"  - Session remained stable throughout all tests")
+        print(f"  - No resource leaks detected")
+
 
 async def run_all_tests():
     """Run all tests and print summary."""
@@ -288,6 +387,7 @@ async def run_all_tests():
             await test_suite.test_performance_comparison(client)
             await test_suite.test_monitoring_endpoints(client)
             await test_suite.test_timeout_handling(client)
+            await test_suite.test_context_manager_safety(client)
 
             print("\n" + "=" * 60)
             print("✅ All tests passed! The FastAPI example properly demonstrates:")

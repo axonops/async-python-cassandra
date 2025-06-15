@@ -11,6 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -40,14 +41,16 @@ class UserUpdate(BaseModel):
     age: Optional[int] = None
 
 
-# Global session
+# Global session, cluster, and keyspace
 session = None
+cluster = None
+keyspace = "example"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage database lifecycle."""
-    global session
+    global session, cluster
 
     try:
         # Startup - connect to Cassandra
@@ -65,12 +68,12 @@ async def lifespan(app: FastAPI):
 
     # Create keyspace and table
     await session.execute(
-        """
-        CREATE KEYSPACE IF NOT EXISTS example
-        WITH REPLICATION = {'class': 'SimpleStrategy', 'replication_factor': 1}
+        f"""
+        CREATE KEYSPACE IF NOT EXISTS {keyspace}
+        WITH REPLICATION = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
     """
     )
-    await session.set_keyspace("example")
+    await session.set_keyspace(keyspace)
     # Drop and recreate table for clean test environment
     await session.execute("DROP TABLE IF EXISTS users")
     await session.execute(
@@ -579,6 +582,357 @@ async def long_running_query():
     """Simulate a long-running query."""
     await asyncio.sleep(10)  # Simulate very long operation
     return {"message": "Long query completed"}
+
+
+# ============================================================================
+# Context Manager Safety Endpoints
+# ============================================================================
+
+@app.post("/context_manager_safety/query_error")
+async def test_query_error_session_safety():
+    """Test that query errors don't close the session."""
+    # Track session state
+    session_id_before = id(session)
+    is_closed_before = session.is_closed
+    
+    # Execute a bad query that will fail
+    try:
+        await session.execute("SELECT * FROM non_existent_table_xyz")
+    except Exception as e:
+        error_message = str(e)
+    
+    # Verify session is still usable
+    session_id_after = id(session)
+    is_closed_after = session.is_closed
+    
+    # Try a valid query to prove session works
+    result = await session.execute("SELECT release_version FROM system.local")
+    version = result.one().release_version
+    
+    return {
+        "test": "query_error_session_safety",
+        "session_unchanged": session_id_before == session_id_after,
+        "session_open": not is_closed_after and not is_closed_before,
+        "error_caught": error_message,
+        "session_still_works": bool(version),
+        "cassandra_version": version
+    }
+
+
+@app.post("/context_manager_safety/streaming_error")
+async def test_streaming_error_session_safety():
+    """Test that streaming errors don't close the session."""
+    session_id_before = id(session)
+    error_message = None
+    stream_completed = False
+    
+    # Try to stream from non-existent table
+    try:
+        async with await session.execute_stream(
+            "SELECT * FROM non_existent_stream_table"
+        ) as stream:
+            async for row in stream:
+                pass
+            stream_completed = True
+    except Exception as e:
+        error_message = str(e)
+    
+    # Verify session is still usable
+    session_id_after = id(session)
+    
+    # Try a valid streaming query
+    row_count = 0
+    async with await session.execute_stream(
+        f"SELECT * FROM {keyspace}.users LIMIT 10"
+    ) as stream:
+        async for row in stream:
+            row_count += 1
+    
+    return {
+        "test": "streaming_error_session_safety",
+        "session_unchanged": session_id_before == session_id_after,
+        "session_open": not session.is_closed,
+        "streaming_error_caught": bool(error_message),
+        "error_message": error_message,
+        "stream_completed": stream_completed,
+        "session_still_streams": row_count > 0,
+        "rows_after_error": row_count
+    }
+
+
+@app.post("/context_manager_safety/concurrent_streams")
+async def test_concurrent_streams():
+    """Test multiple concurrent streams don't interfere."""
+    
+    # Create test data
+    users_to_create = []
+    for i in range(30):
+        users_to_create.append({
+            "id": str(uuid.uuid4()),
+            "name": f"Stream Test User {i}",
+            "email": f"stream{i}@test.com",
+            "age": 20 + (i % 3) * 10  # Ages: 20, 30, 40
+        })
+    
+    # Insert test data
+    for user in users_to_create:
+        await session.execute(
+            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+            [UUID(user["id"]), user["name"], user["email"], user["age"]]
+        )
+    
+    # Stream different age groups concurrently
+    async def stream_age_group(age: int) -> dict:
+        count = 0
+        users = []
+        
+        config = StreamConfig(fetch_size=5)
+        async with await session.execute_stream(
+            f"SELECT * FROM {keyspace}.users WHERE age = %s ALLOW FILTERING",
+            [age],
+            stream_config=config
+        ) as stream:
+            async for row in stream:
+                count += 1
+                users.append(row.name)
+        
+        return {"age": age, "count": count, "users": users[:3]}  # First 3 names
+    
+    # Run concurrent streams
+    results = await asyncio.gather(
+        stream_age_group(20),
+        stream_age_group(30),
+        stream_age_group(40)
+    )
+    
+    # Clean up test data
+    for user in users_to_create:
+        await session.execute(
+            f"DELETE FROM {keyspace}.users WHERE id = %s",
+            [UUID(user["id"])]
+        )
+    
+    return {
+        "test": "concurrent_streams",
+        "streams_completed": len(results),
+        "all_streams_independent": all(r["count"] == 10 for r in results),
+        "results": results,
+        "session_still_open": not session.is_closed
+    }
+
+
+@app.post("/context_manager_safety/nested_contexts")
+async def test_nested_context_managers():
+    """Test nested context managers close in correct order."""
+    events = []
+    
+    # Create a temporary keyspace for this test
+    temp_keyspace = f"test_nested_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        # Create new cluster context
+        async with AsyncCluster(["127.0.0.1"]) as test_cluster:
+            events.append("cluster_opened")
+            
+            # Create session context
+            async with await test_cluster.connect() as test_session:
+                events.append("session_opened")
+                
+                # Create keyspace
+                await test_session.execute(f"""
+                    CREATE KEYSPACE {temp_keyspace}
+                    WITH REPLICATION = {{
+                        'class': 'SimpleStrategy',
+                        'replication_factor': 1
+                    }}
+                """)
+                await test_session.set_keyspace(temp_keyspace)
+                
+                # Create table
+                await test_session.execute("""
+                    CREATE TABLE test_table (
+                        id UUID PRIMARY KEY,
+                        value INT
+                    )
+                """)
+                
+                # Insert test data
+                for i in range(5):
+                    await test_session.execute(
+                        "INSERT INTO test_table (id, value) VALUES (%s, %s)",
+                        [uuid.uuid4(), i]
+                    )
+                
+                # Create streaming context
+                row_count = 0
+                async with await test_session.execute_stream(
+                    "SELECT * FROM test_table"
+                ) as stream:
+                    events.append("stream_opened")
+                    async for row in stream:
+                        row_count += 1
+                    events.append("stream_closed")
+                
+                # Verify session still works after stream closed
+                result = await test_session.execute("SELECT COUNT(*) FROM test_table")
+                count_after_stream = result.one()[0]
+                events.append(f"session_works_after_stream:{count_after_stream}")
+                
+                # Session will close here
+                events.append("session_closing")
+            
+            events.append("session_closed")
+            
+            # Verify cluster still works after session closed
+            async with await test_cluster.connect() as verify_session:
+                result = await verify_session.execute("SELECT now() FROM system.local")
+                events.append(f"cluster_works_after_session:{bool(result.one())}")
+                
+                # Clean up keyspace
+                await verify_session.execute(f"DROP KEYSPACE IF EXISTS {temp_keyspace}")
+            
+            # Cluster will close here
+            events.append("cluster_closing")
+        
+        events.append("cluster_closed")
+        
+    except Exception as e:
+        events.append(f"error:{str(e)}")
+        # Try to clean up
+        try:
+            await session.execute(f"DROP KEYSPACE IF EXISTS {temp_keyspace}")
+        except:
+            pass
+    
+    # Verify our main session is still working
+    main_session_works = False
+    try:
+        result = await session.execute("SELECT now() FROM system.local")
+        main_session_works = bool(result.one())
+    except:
+        pass
+    
+    return {
+        "test": "nested_context_managers",
+        "events": events,
+        "correct_order": events == [
+            "cluster_opened",
+            "session_opened", 
+            "stream_opened",
+            "stream_closed",
+            "session_works_after_stream:5",
+            "session_closing",
+            "session_closed",
+            "cluster_works_after_session:True",
+            "cluster_closing",
+            "cluster_closed"
+        ],
+        "row_count": row_count,
+        "main_session_unaffected": main_session_works
+    }
+
+
+@app.post("/context_manager_safety/cancellation")
+async def test_streaming_cancellation():
+    """Test that cancelled streaming operations clean up properly."""
+    
+    # Create test data
+    test_ids = []
+    for i in range(100):
+        test_id = uuid.uuid4()
+        test_ids.append(test_id)
+        await session.execute(
+            f"INSERT INTO {keyspace}.users (id, name, email, age) VALUES (%s, %s, %s, %s)",
+            [test_id, f"Cancel Test {i}", f"cancel{i}@test.com", 25]
+        )
+    
+    # Start a streaming operation that we'll cancel
+    rows_before_cancel = 0
+    cancelled = False
+    error_type = None
+    
+    async def stream_with_delay():
+        nonlocal rows_before_cancel
+        try:
+            async with await session.execute_stream(
+                f"SELECT * FROM {keyspace}.users WHERE age = 25 ALLOW FILTERING"
+            ) as stream:
+                async for row in stream:
+                    rows_before_cancel += 1
+                    # Add delay to make cancellation more likely
+                    await asyncio.sleep(0.01)
+        except asyncio.CancelledError:
+            nonlocal cancelled
+            cancelled = True
+            raise
+        except Exception as e:
+            nonlocal error_type
+            error_type = type(e).__name__
+            raise
+    
+    # Create task and cancel it
+    task = asyncio.create_task(stream_with_delay())
+    await asyncio.sleep(0.1)  # Let it process some rows
+    task.cancel()
+    
+    # Wait for cancellation
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    
+    # Verify session still works
+    session_works = False
+    row_count_after = 0
+    
+    try:
+        # Count rows to verify session works
+        result = await session.execute(
+            f"SELECT COUNT(*) FROM {keyspace}.users WHERE age = 25 ALLOW FILTERING"
+        )
+        row_count_after = result.one()[0]
+        session_works = True
+        
+        # Try streaming again
+        new_stream_count = 0
+        async with await session.execute_stream(
+            f"SELECT * FROM {keyspace}.users WHERE age = 25 LIMIT 10 ALLOW FILTERING"
+        ) as stream:
+            async for row in stream:
+                new_stream_count += 1
+        
+    except Exception as e:
+        error_type = f"post_cancel_error:{type(e).__name__}"
+    
+    # Clean up test data
+    for test_id in test_ids:
+        await session.execute(
+            f"DELETE FROM {keyspace}.users WHERE id = %s",
+            [test_id]
+        )
+    
+    return {
+        "test": "streaming_cancellation",
+        "rows_processed_before_cancel": rows_before_cancel,
+        "was_cancelled": cancelled,
+        "session_still_works": session_works,
+        "total_rows": row_count_after,
+        "new_stream_worked": new_stream_count == 10,
+        "error_type": error_type,
+        "session_open": not session.is_closed
+    }
+
+
+@app.get("/context_manager_safety/status")
+async def context_manager_safety_status():
+    """Get current session and cluster status."""
+    return {
+        "session_open": not session.is_closed,
+        "session_id": id(session),
+        "cluster_open": not cluster.is_closed,
+        "cluster_id": id(cluster),
+        "keyspace": keyspace
+    }
 
 
 if __name__ == "__main__":
